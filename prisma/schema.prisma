@@ -1,0 +1,169 @@
+// ============================================================
+// Alumni Association App — Prisma schema (SQL Server)
+// Mirrors alumni-app-schema.sql
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+model OrganizationSettings {
+  settingId       Int      @id @default(autoincrement()) @map("SettingId")
+  groupName       String   @map("GroupName") @db.NVarChar(150)
+  logoData        Bytes?   @map("LogoData")
+  logoContentType String?  @map("LogoContentType") @db.NVarChar(50)
+  updatedAt       DateTime @default(now()) @map("UpdatedAt")
+
+  @@map("OrganizationSettings")
+}
+
+model Member {
+  memberId         Int      @id @default(autoincrement()) @map("MemberId")
+  firstName        String   @map("FirstName") @db.NVarChar(100)
+  lastName         String   @map("LastName") @db.NVarChar(100)
+  emailEncrypted   Bytes?   @map("Email")
+  phoneEncrypted   Bytes?   @map("Phone")
+  dateOfBirth      DateTime @map("DateOfBirth") @db.Date
+  occupation      String?  @map("Occupation") @db.NVarChar(150)
+  location        String?  @map("Location") @db.NVarChar(200)
+  photoData        Bytes?   @map("PhotoData")
+  photoContentType String?  @map("PhotoContentType") @db.NVarChar(50)
+  thoughts         String?  @map("Thoughts") @db.NVarChar(1000)
+  isExecutive      Boolean  @default(false) @map("IsExecutive")
+  executiveTitle   String?  @map("ExecutiveTitle") @db.NVarChar(100)
+  dateJoined       DateTime? @map("DateJoined") @db.Date
+  createdAt        DateTime @default(now()) @map("CreatedAt")
+  updatedAt        DateTime @default(now()) @map("UpdatedAt")
+
+  user                 User?
+  contributionPayments ContributionPayment[]
+  monthlyDues          MonthlyDue[]
+  emailLogs            EmailLog[]
+
+  @@map("Members")
+}
+
+model User {
+  userId       Int      @id @default(autoincrement()) @map("UserId")
+  username     String   @unique @map("Username") @db.NVarChar(100)
+  passwordHash String   @map("PasswordHash") @db.NVarChar(300)
+  memberId     Int?     @unique @map("MemberId")
+  member       Member?  @relation(fields: [memberId], references: [memberId])
+  createdAt    DateTime @default(now()) @map("CreatedAt")
+
+  contributionsCreated ContributionType[]
+  contributionPayments ContributionPayment[]
+  contributionReleases ContributionRelease[]
+  monthlyDues          MonthlyDue[]
+
+  @@map("Users")
+}
+
+model ContributionType {
+  contributionId  Int      @id @default(autoincrement()) @map("ContributionId")
+  title           String   @map("Title") @db.NVarChar(150)
+  description     String?  @map("Description") @db.NVarChar(500)
+  createdAt       DateTime @default(now()) @map("CreatedAt")
+  createdByUserId Int?     @map("CreatedByUserId")
+  createdBy       User?    @relation(fields: [createdByUserId], references: [userId])
+
+  payments ContributionPayment[]
+  releases ContributionRelease[]
+
+  @@map("ContributionTypes")
+}
+
+model ContributionRelease {
+  releaseId          Int      @id @default(autoincrement()) @map("ReleaseId")
+  contributionId     Int      @map("ContributionId")
+  contribution       ContributionType @relation(fields: [contributionId], references: [contributionId], onDelete: NoAction, onUpdate: NoAction)
+  amountReleased     Decimal  @map("AmountReleased") @db.Decimal(12, 2)
+  purpose            String   @map("Purpose") @db.NVarChar(300)
+  receiptData        Bytes?   @map("ReceiptData")
+  receiptContentType String?  @map("ReceiptContentType") @db.NVarChar(50)
+  releaseDate        DateTime @default(now()) @map("ReleaseDate") @db.Date
+  createdByUserId    Int?     @map("CreatedByUserId")
+  createdBy          User?    @relation(fields: [createdByUserId], references: [userId], onDelete: NoAction, onUpdate: NoAction)
+  createdAt          DateTime @default(now()) @map("CreatedAt")
+
+  @@map("ContributionReleases")
+}
+
+model ContributionPayment {
+  paymentId          Int      @id @default(autoincrement()) @map("PaymentId")
+  contributionId     Int      @map("ContributionId")
+  contribution       ContributionType @relation(fields: [contributionId], references: [contributionId], onDelete: NoAction, onUpdate: NoAction)
+  memberId           Int      @map("MemberId")
+  member             Member   @relation(fields: [memberId], references: [memberId], onDelete: NoAction, onUpdate: NoAction)
+  amount             Decimal  @map("Amount") @db.Decimal(12, 2)
+  receiptData        Bytes?   @map("ReceiptData")
+  receiptContentType String?  @map("ReceiptContentType") @db.NVarChar(50)
+  paymentMethod      String   @default("Manual") @map("PaymentMethod") @db.NVarChar(20) // 'Manual' | 'Paystack'
+  paystackReference  String?  @map("PaystackReference") @db.NVarChar(100)
+  paymentDate        DateTime @default(now()) @map("PaymentDate") @db.Date
+  createdByUserId    Int?     @map("CreatedByUserId")
+  createdBy          User?    @relation(fields: [createdByUserId], references: [userId], onDelete: NoAction, onUpdate: NoAction)
+  createdAt          DateTime @default(now()) @map("CreatedAt")
+
+  @@map("ContributionPayments")
+}
+
+model MonthlyDue {
+  dueId              Int      @id @default(autoincrement()) @map("DueId")
+  dueYear             Int     @map("DueYear") @db.SmallInt
+  dueMonth            Int     @map("DueMonth") @db.TinyInt
+  memberId            Int     @map("MemberId")
+  member              Member  @relation(fields: [memberId], references: [memberId], onDelete: NoAction, onUpdate: NoAction)
+  amount              Decimal @map("Amount") @db.Decimal(12, 2)
+  receiptData         Bytes?  @map("ReceiptData")
+  receiptContentType  String? @map("ReceiptContentType") @db.NVarChar(50)
+  paymentMethod       String  @default("Manual") @map("PaymentMethod") @db.NVarChar(20) // 'Manual' | 'Paystack'
+  paystackReference   String? @map("PaystackReference") @db.NVarChar(100)
+  paymentDate         DateTime @default(now()) @map("PaymentDate") @db.Date
+  createdByUserId     Int?    @map("CreatedByUserId")
+  createdBy           User?   @relation(fields: [createdByUserId], references: [userId], onDelete: NoAction, onUpdate: NoAction)
+  createdAt           DateTime @default(now()) @map("CreatedAt")
+
+  @@unique([memberId, dueYear, dueMonth], name: "UQ_MemberDuePerMonth")
+  @@map("MonthlyDues")
+}
+
+model PaystackWebhookLog {
+  webhookLogId Int      @id @default(autoincrement()) @map("WebhookLogId")
+  eventType    String   @map("EventType") @db.NVarChar(50)
+  reference    String   @map("Reference") @db.NVarChar(100)
+  rawPayload   String?  @map("RawPayload") @db.NVarChar(Max)
+  processed    Boolean  @default(false) @map("Processed")
+  receivedAt   DateTime @default(now()) @map("ReceivedAt")
+
+  @@map("PaystackWebhookLog")
+}
+
+model ConstitutionSection {
+  sectionId       Int      @id @default(autoincrement()) @map("SectionId")
+  title           String   @map("Title") @db.NVarChar(200)
+  orderIndex      Int      @map("OrderIndex")
+  content         String   @map("Content") @db.NVarChar(Max)
+  parentSectionId Int?     @map("ParentSectionId")
+  parent          ConstitutionSection?  @relation("SectionHierarchy", fields: [parentSectionId], references: [sectionId], onDelete: NoAction, onUpdate: NoAction)
+  children        ConstitutionSection[] @relation("SectionHierarchy")
+  updatedAt       DateTime @default(now()) @map("UpdatedAt")
+
+  @@map("ConstitutionSections")
+}
+
+model EmailLog {
+  emailLogId Int      @id @default(autoincrement()) @map("EmailLogId")
+  memberId   Int      @map("MemberId")
+  member     Member   @relation(fields: [memberId], references: [memberId])
+  emailType  String   @map("EmailType") @db.NVarChar(30) // 'Birthday' | 'NewMonth'
+  sentAt     DateTime @default(now()) @map("SentAt")
+  status     String   @default("Sent") @map("Status") @db.NVarChar(20)
+
+  @@map("EmailLog")
+}
