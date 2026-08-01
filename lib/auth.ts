@@ -36,7 +36,7 @@ export function setSessionCookie(token: string) {
 }
 
 export function clearSessionCookie() {
-  cookies().delete(COOKIE_NAME, { path: "/" });
+  cookies().delete({ name: COOKIE_NAME, path: "/" });
 }
 
 export interface SessionPayload {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 interface Contribution {
@@ -11,6 +12,7 @@ interface Contribution {
 }
 
 export default function ContributionsPage() {
+  const router = useRouter();
   const [contributions, setContributions] = useState<Contribution[]>([]);
   const [query, setQuery] = useState("");
   const [showForm, setShowForm] = useState(false);

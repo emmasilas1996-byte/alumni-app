@@ -178,8 +178,17 @@ async function main() {
     return;
   }
 
+  const uniqueRecords = Array.from(
+    new Map(
+      records.map((record) => [
+        `${record.memberId}-${record.dueYear}-${record.dueMonth}`,
+        record,
+      ])
+    ).values()
+  );
+
   await prisma.monthlyDue.createMany({
-    data: records.map((record) => ({
+    data: uniqueRecords.map((record) => ({
       memberId: record.memberId,
       dueYear: record.dueYear,
       dueMonth: record.dueMonth,
@@ -187,10 +196,9 @@ async function main() {
       paymentMethod: record.paymentMethod,
       paymentDate: record.paymentDate,
     })),
-    skipDuplicates: true,
   });
 
-  results.imported = records.length;
+  results.imported = uniqueRecords.length;
   console.log(`Imported ${results.imported} monthly dues.`);
   if (results.warnings.length > 0) {
     console.log(`Skipped ${results.skipped} rows with warnings:`);
