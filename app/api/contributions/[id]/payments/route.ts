@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { clearSessionCookie, requireSession } from "@/lib/auth";
 import { encryptBuffer } from "@/lib/crypto";
 
 // POST /api/contributions/:id/payments — add a member as a payer.
@@ -41,5 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     },
   });
 
-  return NextResponse.json(payment, { status: 201 });
+  const response = NextResponse.json(payment, { status: 201 });
+  clearSessionCookie();
+  return response;
 }

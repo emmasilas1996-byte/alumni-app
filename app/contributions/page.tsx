@@ -12,6 +12,7 @@ interface Contribution {
 
 export default function ContributionsPage() {
   const [contributions, setContributions] = useState<Contribution[]>([]);
+  const [query, setQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -35,7 +36,7 @@ export default function ContributionsPage() {
       body: JSON.stringify({ title, description }),
     });
     if (res.status === 401) {
-      setError("You need to sign in to create a contribution.");
+      router.push(`/login?redirect=${encodeURIComponent("/contributions")}`);
       return;
     }
     setShowForm(false);
@@ -53,6 +54,13 @@ export default function ContributionsPage() {
         </button>
       </div>
       <p className="text-sm text-gray-500 mb-4">Static list — not filtered by year or month.</p>
+
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="🔍 Search contributions by title or description..."
+        className="border border-line rounded-lg px-3 py-2 w-full text-sm mb-4"
+      />
 
       {showForm && (
         <form onSubmit={handleCreate} className="bg-white border border-line rounded-2xl p-4 mb-6 space-y-3">
@@ -75,7 +83,13 @@ export default function ContributionsPage() {
       )}
 
       <div className="bg-white border border-line rounded-2xl divide-y">
-        {contributions.map((c) => (
+        {contributions
+          .filter((c) => {
+            const q = query.trim().toLowerCase();
+            if (!q) return true;
+            return c.title.toLowerCase().includes(q) || (c.description || "").toLowerCase().includes(q);
+          })
+          .map((c) => (
           <Link
             key={c.contributionId}
             href={`/contributions/${c.contributionId}`}

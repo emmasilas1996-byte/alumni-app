@@ -82,12 +82,26 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // "Net Available Balance" mirrors what a real bank balance represents —
+  // a running total, not scoped to one year (a contribution collected in
+  // one year could be released in a later year). Computed all-time here,
+  // separate from the year-filtered cards above.
+  const allTimeContributions = await prisma.contributionPayment.aggregate({
+    _sum: { amount: true },
+  });
+  const allTimeReleased = await prisma.contributionRelease.aggregate({
+    _sum: { amountReleased: true },
+  });
+  const netAvailableBalance =
+    Number(allTimeContributions._sum.amount || 0) - Number(allTimeReleased._sum.amountReleased || 0);
+
   return NextResponse.json({
     year,
     totalMembers,
     totalContributions: Number(contributionAgg._sum.amount || 0),
     totalMonthlyDues: Number(duesAgg._sum.amount || 0),
     totalReleased: Number(releasedAgg._sum.amountReleased || 0),
+    netAvailableBalance,
     topContributors,
     todaysBirthdays,
   });

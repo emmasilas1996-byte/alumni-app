@@ -38,7 +38,7 @@ export async function buildRecordPdf({ title, subtitle, rows, total }: BuildPdfI
     }
   }
 
-  page.drawText(settings?.groupName || "Alumni Association", {
+  page.drawText(settings?.groupName || "NEMSS 2014 SET", {
     x: 110,
     y: y - 5,
     size: 12,

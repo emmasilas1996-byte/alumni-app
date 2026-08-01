@@ -23,7 +23,7 @@ export default function Navbar() {
           </svg>
           <div className="leading-tight">
             <div className="font-display font-bold text-[17px] tracking-wide">NEMSS</div>
-            <div className="text-[10.5px] text-gold-light uppercase tracking-wider">Alumni Association</div>
+            <div className="text-[10.5px] text-gold-light uppercase tracking-wider">2014 SET</div>
           </div>
         </Link>
         <nav className="flex gap-5 flex-wrap">

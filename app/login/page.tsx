@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get("redirect") || "/contributions";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -21,7 +23,7 @@ export default function LoginPage() {
     });
     setLoading(false);
     if (res.ok) {
-      router.push("/contributions");
+      router.push(redirectTo);
     } else {
       const body = await res.json();
       setError(body.error || "Login failed.");

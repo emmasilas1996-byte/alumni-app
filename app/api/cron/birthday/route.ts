@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  const celebrants = members.filter((m) => {
+  const celebrants = members.filter((m: { dateOfBirth: string | Date }) => {
     const dob = new Date(m.dateOfBirth);
     return dob.getMonth() + 1 === month && dob.getDate() === day;
   });

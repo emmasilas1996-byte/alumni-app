@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireSession, clearSessionCookie } from "@/lib/auth";
 import { encryptBuffer } from "@/lib/crypto";
 
 // GET /api/dues?year=2026&month=3 — members who paid dues that month.
@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
         createdByUserId: session.userId,
       },
     });
+    clearSessionCookie();
     return NextResponse.json(due, { status: 201 });
   } catch (e: any) {
     if (e.code === "P2002") {

@@ -19,7 +19,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return new NextResponse(new Uint8Array(decrypted), {
     headers: {
       "Content-Type": member.photoContentType || "image/jpeg",
-      "Cache-Control": "private, max-age=300",
+      // No caching: previously this was cached for 5 minutes, which meant
+      // a freshly re-uploaded photo would keep showing the OLD image in
+      // the browser until the cache expired — looked exactly like a
+      // failed upload even though the server-side save succeeded.
+      "Cache-Control": "no-store",
     },
   });
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
 interface Payment {
   paymentId: number;
@@ -38,6 +39,15 @@ interface ReleasesData {
 }
 
 export default function ContributionDetailPage({ params }: { params: { id: string } }) {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ContributionDetailPageContent params={params} />
+    </Suspense>
+  );
+}
+
+function ContributionDetailPageContent({ params }: { params: { id: string } }) {
+  const searchParams = useSearchParams();
   const [data, setData] = useState<ContributionDetail | null>(null);
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [releases, setReleases] = useState<ReleasesData | null>(null);
@@ -48,6 +58,23 @@ export default function ContributionDetailPage({ params }: { params: { id: strin
   const [paystackError, setPaystackError] = useState("");
   const [paystackLoading, setPaystackLoading] = useState(false);
   const [releaseError, setReleaseError] = useState("");
+  const [authenticated, setAuthenticated] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/session");
+        if (res.ok) {
+          const body = await res.json();
+          setAuthenticated(!!body.authenticated);
+        }
+      } catch (err) {
+        console.error("Failed to check auth session", err);
+      }
+    })();
+  }, []);
 
   async function load() {
     const [detailRes, membersRes, releasesRes] = await Promise.all([
@@ -63,6 +90,33 @@ export default function ContributionDetailPage({ params }: { params: { id: strin
   useEffect(() => {
     load();
   }, [params.id]);
+
+  useEffect(() => {
+    const reference = searchParams.get("reference");
+    const paystackStatus = searchParams.get("paystack");
+
+    if (!reference || paystackStatus !== "pending") {
+      return;
+    }
+
+    const verifyPayment = async () => {
+      try {
+        const res = await fetch("/api/payments/paystack/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reference }),
+        });
+        const body = await res.json();
+        if (res.ok && body.recorded) {
+          await load();
+        }
+      } catch (err) {
+        console.error("Paystack verification failed", err);
+      }
+    };
+
+    verifyPayment();
+  }, [searchParams]);
 
   async function handlePayViaPaystack(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -102,6 +156,7 @@ export default function ContributionDetailPage({ params }: { params: { id: strin
     }
     setShowForm(false);
     (e.target as HTMLFormElement).reset();
+    setAuthenticated(false);
     load();
   }
 
@@ -124,6 +179,7 @@ export default function ContributionDetailPage({ params }: { params: { id: strin
     }
     setShowReleaseForm(false);
     (e.target as HTMLFormElement).reset();
+    setAuthenticated(false);
     load();
   }
 
@@ -144,7 +200,15 @@ export default function ContributionDetailPage({ params }: { params: { id: strin
           {showPaystackForm ? "Cancel" : "💳 Pay via Paystack"}
         </button>
         <button
-          onClick={() => { setShowForm((s) => !s); setShowPaystackForm(false); setShowReleaseForm(false); }}
+          onClick={() => {
+            if (!authenticated) {
+              router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+              return;
+            }
+            setShowForm((s) => !s);
+            setShowPaystackForm(false);
+            setShowReleaseForm(false);
+          }}
           className="bg-navy text-white px-4 py-2 rounded-lg text-sm font-medium"
         >
           {showForm ? "Cancel" : "+ Manual / Cash (login required)"}

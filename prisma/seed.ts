@@ -17,7 +17,7 @@ async function main() {
   const existingSettings = await prisma.organizationSettings.findFirst();
   if (!existingSettings) {
     await prisma.organizationSettings.create({
-      data: { groupName: "Alumni Association" },
+      data: { groupName: "NEMSS 2014 SET" },
     });
     console.log("Seeded default organization settings (upload a logo from Settings later).");
   }

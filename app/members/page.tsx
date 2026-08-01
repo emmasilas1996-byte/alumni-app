@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import ConfirmModal from "@/components/ConfirmModal";
 
 interface Member {
@@ -13,15 +14,23 @@ interface Member {
   executiveTitle: string | null;
   occupation: string | null;
   location: string | null;
+  thoughts?: string | null;
+  email?: string | null;
+  phone?: string | null;
 }
 
 export default function MembersPage() {
   const [members, setMembers] = useState<Member[]>([]);
+  const [query, setQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+  const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState("");
   const [deleteMemberId, setDeleteMemberId] = useState<number | null>(null);
-  const [updatingPhoto, setUpdatingPhoto] = useState(false);
+  const [photoVersion, setPhotoVersion] = useState(0);
+  const router = useRouter();
+  const pathname = usePathname();
 
   async function load() {
     const res = await fetch("/api/members");
@@ -48,53 +57,85 @@ export default function MembersPage() {
     }
   }
 
-  function confirmRemove(id: number) {
-    setDeleteMemberId(id);
-  }
-
-  async function handleRemove() {
-    if (deleteMemberId === null) return;
-    const res = await fetch(`/api/members/${deleteMemberId}`, { method: "DELETE" });
-    if (!res.ok) {
-      const err = await res.json();
-      alert(err.error || "Could not remove member.");
+  // Clicking "Edit" checks the session first — if not signed in, sends
+  // the person to /login and back here, matching how Add Contribution /
+  // Add Dues already work elsewhere in the app.
+  async function handleEditClick(member: Member) {
+    const res = await fetch("/api/auth/session");
+    const session = await res.json();
+    if (!session.authenticated) {
+      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
       return;
     }
-    setDeleteMemberId(null);
-    load();
+    setEditError("");
+    setEditingMember(member);
   }
 
-  async function handlePhotoUpdate(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSaveEdit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!selectedMember) return;
-
+    if (!editingMember) return;
+    setSavingEdit(true);
+    setEditError("");
     const formData = new FormData(e.currentTarget);
-    const photo = formData.get("photo") as File | null;
-    if (!photo || photo.size === 0) {
-      alert("Please choose a photo to upload.");
-      return;
-    }
-
-    setUpdatingPhoto(true);
-    const res = await fetch(`/api/members/${selectedMember.memberId}`, {
+    const res = await fetch(`/api/members/${editingMember.memberId}`, {
       method: "PATCH",
       body: formData,
     });
-    setUpdatingPhoto(false);
+    setSavingEdit(false);
 
+    if (res.status === 401) {
+      setEditError("Sign in required to save changes.");
+      return;
+    }
     if (!res.ok) {
       const err = await res.json();
-      alert(err.error || "Could not update member photo.");
+      setEditError(err.error || "Could not save changes.");
       return;
     }
 
-    setSelectedMember(null);
+    setPhotoVersion((v) => v + 1);
+    setEditingMember(null);
     load();
   }
 
+  function confirmDelete() {
+    if (!editingMember) return;
+    setDeleteMemberId(editingMember.memberId);
+  }
+
+  async function handleDelete() {
+    if (deleteMemberId === null) return;
+    const res = await fetch(`/api/members/${deleteMemberId}`, { method: "DELETE" });
+    if (res.status === 401) {
+      setEditError("Sign in required to delete a member.");
+      setDeleteMemberId(null);
+      return;
+    }
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.error || "Could not remove member.");
+      setDeleteMemberId(null);
+      return;
+    }
+    setDeleteMemberId(null);
+    setEditingMember(null);
+    load();
+  }
+
+  const filtered = members.filter((m) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      `${m.firstName} ${m.lastName}`.toLowerCase().includes(q) ||
+      (m.occupation || "").toLowerCase().includes(q) ||
+      (m.location || "").toLowerCase().includes(q) ||
+      (m.executiveTitle || "").toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
         <h1 className="font-display text-[26px] font-semibold">Members</h1>
         <button
           onClick={() => setShowForm((s) => !s)}
@@ -104,21 +145,30 @@ export default function MembersPage() {
         </button>
       </div>
 
+      <div className="relative mb-4">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="🔍 Search members by name, occupation, location, or title..."
+          className="border border-line rounded-lg px-3 py-2 w-full text-sm"
+        />
+      </div>
+
       {showForm && (
         <form onSubmit={handleAdd} className="bg-white border border-line rounded-2xl p-4 mb-6 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input name="firstName" placeholder="First name" required className="border rounded px-3 py-2" />
             <input name="lastName" placeholder="Last name" required className="border rounded px-3 py-2" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input name="email" type="email" placeholder="Email" className="border rounded px-3 py-2" />
             <input name="phone" placeholder="Phone" className="border rounded px-3 py-2" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input name="occupation" placeholder="Occupation" className="border rounded px-3 py-2" />
             <input name="location" placeholder="Location" className="border rounded px-3 py-2" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="text-sm text-gray-600">
               Date of birth
               <input name="dateOfBirth" type="date" required className="border rounded px-3 py-2 w-full mt-1" />
@@ -148,14 +198,13 @@ export default function MembersPage() {
       )}
 
       <div className="bg-white border border-line rounded-2xl divide-y">
-        {members.map((m) => (
+        {filtered.map((m) => (
           <div key={m.memberId} className="flex items-center gap-3 p-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={`/api/members/${m.memberId}/photo`}
+              src={`/api/members/${m.memberId}/photo?v=${photoVersion}`}
               alt={m.firstName}
-              className="w-10 h-10 rounded-full object-cover bg-gray-200 cursor-pointer"
-              onClick={() => setSelectedMember(m)}
+              className="w-10 h-10 rounded-full object-cover bg-gray-200"
               onError={(e) => ((e.target as HTMLImageElement).style.visibility = "hidden")}
             />
             <div className="flex-1">
@@ -163,74 +212,128 @@ export default function MembersPage() {
               <div className="text-xs text-gray-500">
                 {m.isExecutive ? `Executive — ${m.executiveTitle || "No title"}` : "Member"}
               </div>
-              {(m.occupation || m.location) ? (
+              {(m.occupation || m.location || m.email || m.phone) ? (
                 <div className="text-xs text-gray-500">
-                  {[m.occupation, m.location].filter(Boolean).join(" • ")}
+                  {[m.occupation, m.location, m.email ? `📧 ${m.email}` : null, m.phone ? `📞 ${m.phone}` : null]
+                    .filter(Boolean)
+                    .join(" • ")}
                 </div>
               ) : null}
             </div>
-            <button onClick={() => confirmRemove(m.memberId)} className="text-sm text-red-600">
-              Remove
+            <button
+              onClick={() => handleEditClick(m)}
+              className="text-sm text-navy border border-navy px-3 py-1.5 rounded-lg"
+            >
+              ✏️ Edit
             </button>
           </div>
         ))}
-        {members.length === 0 && <div className="p-4 text-sm text-gray-500">No members yet.</div>}
+        {filtered.length === 0 && (
+          <div className="p-4 text-sm text-gray-500">
+            {members.length === 0 ? "No members yet." : "No members match your search."}
+          </div>
+        )}
       </div>
 
-      {selectedMember ? (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setSelectedMember(null)}>
-          <div className="bg-white rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      {/* EDIT MODAL — reachable only after the session check above passes */}
+      {editingMember ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setEditingMember(null)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center p-4 border-b border-line">
-              <div>
-                <div className="text-lg font-semibold">{selectedMember.firstName} {selectedMember.lastName}</div>
-                <div className="text-sm text-gray-500">{selectedMember.isExecutive ? `Executive — ${selectedMember.executiveTitle || "No title"}` : "Member"}</div>
-              </div>
-              <button onClick={() => setSelectedMember(null)} className="text-sm text-gray-600 hover:text-black">Close</button>
+              <div className="text-lg font-semibold">Edit {editingMember.firstName} {editingMember.lastName}</div>
+              <button onClick={() => setEditingMember(null)} className="text-sm text-gray-600 hover:text-black">Close</button>
             </div>
-            <div className="grid gap-4 sm:grid-cols-[180px_1fr] p-4">
-              <div className="rounded-3xl overflow-hidden bg-slate-100">
+
+            <form onSubmit={handleSaveEdit} className="p-4 space-y-3">
+              {editError && <div className="text-sm text-red-600">{editError}</div>}
+
+              <div className="flex items-center gap-3 mb-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={`/api/members/${selectedMember.memberId}/photo`}
-                  alt={selectedMember.firstName}
-                  className="w-full h-full object-cover"
+                  src={`/api/members/${editingMember.memberId}/photo?v=${photoVersion}`}
+                  alt={editingMember.firstName}
+                  className="w-16 h-16 rounded-full object-cover bg-gray-200"
+                  onError={(e) => ((e.target as HTMLImageElement).style.visibility = "hidden")}
+                />
+                <label className="text-sm text-gray-600 block flex-1">
+                  Replace photo
+                  <input name="photo" type="file" accept="image/*" className="block mt-1" />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input name="firstName" defaultValue={editingMember.firstName} placeholder="First name" required className="border rounded px-3 py-2" />
+                <input name="lastName" defaultValue={editingMember.lastName} placeholder="Last name" required className="border rounded px-3 py-2" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input
+                  name="email"
+                  type="email"
+                  defaultValue={editingMember.email || ""}
+                  placeholder="Email (leave blank to keep current)"
+                  className="border rounded px-3 py-2"
+                />
+                <input
+                  name="phone"
+                  defaultValue={editingMember.phone || ""}
+                  placeholder="Phone (leave blank to keep current)"
+                  className="border rounded px-3 py-2"
                 />
               </div>
-              <div className="space-y-3">
-                <form onSubmit={handlePhotoUpdate} className="space-y-3">
-                  <label className="text-sm text-gray-600 block">
-                    Replace photo
-                    <input name="photo" type="file" accept="image/*" className="block mt-1" />
-                  </label>
-                  <button
-                    type="submit"
-                    disabled={updatingPhoto}
-                    className="bg-navy text-white px-4 py-2 rounded text-sm disabled:opacity-50"
-                  >
-                    {updatingPhoto ? "Uploading..." : "Upload New Photo"}
-                  </button>
-                </form>
-
-                {selectedMember.occupation && (
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-gray-500">Occupation</div>
-                    <div className="text-sm font-medium">{selectedMember.occupation}</div>
-                  </div>
-                )}
-                {selectedMember.location && (
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-gray-500">Location</div>
-                    <div className="text-sm font-medium">{selectedMember.location}</div>
-                  </div>
-                )}
-                {selectedMember.dateJoined && (
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-gray-500">Joined</div>
-                    <div className="text-sm font-medium">{new Date(selectedMember.dateJoined).toLocaleDateString()}</div>
-                  </div>
-                )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input name="occupation" defaultValue={editingMember.occupation || ""} placeholder="Occupation" className="border rounded px-3 py-2" />
+                <input name="location" defaultValue={editingMember.location || ""} placeholder="Location" className="border rounded px-3 py-2" />
               </div>
-            </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="text-sm text-gray-600">
+                  Date of birth
+                  <input
+                    name="dateOfBirth"
+                    type="date"
+                    defaultValue={editingMember.dateOfBirth?.slice(0, 10)}
+                    className="border rounded px-3 py-2 w-full mt-1"
+                  />
+                </label>
+                <label className="text-sm text-gray-600">
+                  Date joined
+                  <input
+                    name="dateJoined"
+                    type="date"
+                    defaultValue={editingMember.dateJoined?.slice(0, 10) || ""}
+                    className="border rounded px-3 py-2 w-full mt-1"
+                  />
+                </label>
+              </div>
+              <textarea
+                name="thoughts"
+                defaultValue={editingMember.thoughts || ""}
+                placeholder="A few words / thoughts (used in Gallery)"
+                className="border rounded px-3 py-2 w-full"
+              />
+
+              <div className="flex justify-between items-center pt-2">
+                <button
+                  type="button"
+                  onClick={confirmDelete}
+                  className="text-sm text-red-600"
+                >
+                  Delete member
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="bg-navy text-white px-4 py-2 rounded text-sm disabled:opacity-50"
+                >
+                  {savingEdit ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}
@@ -241,7 +344,7 @@ export default function MembersPage() {
           description="Are you sure you want to remove this member? This action cannot be undone."
           confirmLabel="Remove member"
           cancelLabel="Cancel"
-          onConfirm={handleRemove}
+          onConfirm={handleDelete}
           onCancel={() => setDeleteMemberId(null)}
         />
       ) : null}

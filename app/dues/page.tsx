@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -20,8 +21,9 @@ interface MemberOption {
   lastName: string;
 }
 
-export default function DuesPage() {
+function DuesPageContent() {
   const now = new Date();
+  const searchParams = useSearchParams();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [dues, setDues] = useState<Due[]>([]);
@@ -31,6 +33,27 @@ export default function DuesPage() {
   const [error, setError] = useState("");
   const [paystackError, setPaystackError] = useState("");
   const [paystackLoading, setPaystackLoading] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
+  const [bulkError, setBulkError] = useState("");
+  const router = useRouter();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/session");
+        if (res.ok) {
+          const body = await res.json();
+          setAuthenticated(!!body.authenticated);
+        }
+      } catch (err) {
+        console.error("Failed to check auth session", err);
+      }
+    })();
+  }, []);
 
   async function load() {
     const [duesRes, membersRes] = await Promise.all([
@@ -45,6 +68,33 @@ export default function DuesPage() {
     load();
   }, [year, month]);
 
+  useEffect(() => {
+    const reference = searchParams.get("reference");
+    const paystackStatus = searchParams.get("paystack");
+
+    if (!reference || paystackStatus !== "pending") {
+      return;
+    }
+
+    const verifyPayment = async () => {
+      try {
+        const res = await fetch("/api/payments/paystack/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reference }),
+        });
+        const body = await res.json();
+        if (res.ok && body.recorded) {
+          await load();
+        }
+      } catch (err) {
+        console.error("Paystack verification failed", err);
+      }
+    };
+
+    verifyPayment();
+  }, [searchParams]);
+
   async function handleAdd(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
@@ -53,7 +103,7 @@ export default function DuesPage() {
     formData.set("dueMonth", String(month));
     const res = await fetch("/api/dues", { method: "POST", body: formData });
     if (res.status === 401) {
-      setError("Sign in required to add a payment.");
+      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
       return;
     }
     if (!res.ok) {
@@ -63,6 +113,7 @@ export default function DuesPage() {
     }
     setShowForm(false);
     (e.target as HTMLFormElement).reset();
+    setAuthenticated(false);
     load();
   }
 
@@ -91,6 +142,29 @@ export default function DuesPage() {
     window.location.href = body.authorizationUrl;
   }
 
+  async function handleBulkImport(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBulkError("");
+    setBulkResult(null);
+    setBulkImporting(true);
+    const formData = new FormData(e.currentTarget);
+    const res = await fetch("/api/dues/bulk-import", { method: "POST", body: formData });
+    setBulkImporting(false);
+    if (res.status === 401) {
+      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    const body = await res.json();
+    if (!res.ok) {
+      setBulkError(body.error || "Could not process the CSV file.");
+      return;
+    }
+    setBulkResult(body);
+    (e.target as HTMLFormElement).reset();
+    setAuthenticated(false);
+    load();
+  }
+
   const years = Array.from({ length: 6 }, (_, i) => now.getFullYear() - i);
   const total = dues.reduce((sum, d) => sum + Number(d.amount), 0);
 
@@ -116,10 +190,31 @@ export default function DuesPage() {
           {showPaystackForm ? "Cancel" : "💳 Pay via Paystack"}
         </button>
         <button
-          onClick={() => { setShowForm((s) => !s); setShowPaystackForm(false); }}
+          onClick={() => {
+            if (!authenticated) {
+              router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+              return;
+            }
+            setShowForm((s) => !s);
+            setShowPaystackForm(false);
+          }}
           className="bg-navy text-white px-4 py-2 rounded text-sm"
         >
           {showForm ? "Cancel" : "+ Manual / Cash (login required)"}
+        </button>
+        <button
+          onClick={() => {
+            if (!authenticated) {
+              router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+              return;
+            }
+            setShowBulkImport((s) => !s);
+            setShowForm(false);
+            setShowPaystackForm(false);
+          }}
+          className="border border-navy text-navy px-4 py-2 rounded text-sm"
+        >
+          {showBulkImport ? "Cancel" : "📤 Upload Historical Dues (CSV, login required)"}
         </button>
         <a
           href={`/api/dues/export?year=${year}&month=${month}`}
@@ -128,6 +223,45 @@ export default function DuesPage() {
           ⬇ Export This Month as PDF
         </a>
       </div>
+
+      {showBulkImport && (
+        <form onSubmit={handleBulkImport} className="bg-white border border-line rounded-2xl p-4 mb-6 space-y-3">
+          {bulkError && <div className="text-sm text-red-600">{bulkError}</div>}
+          <p className="text-xs text-gray-500">
+            For recording dues collected in past years before this app existed. Upload a CSV with columns:{" "}
+            <code className="bg-gray-100 px-1 rounded">FirstName,LastName,Year,Month,Amount</code>{" "}
+            (optionally add <code className="bg-gray-100 px-1 rounded">PaymentDate</code> as YYYY-MM-DD).
+            Names must match existing Members exactly.
+          </p>
+          <input
+            name="file"
+            type="file"
+            accept=".csv,text/csv"
+            required
+            className="block text-sm"
+          />
+          <button
+            type="submit"
+            disabled={bulkImporting}
+            className="bg-navy text-white px-4 py-2 rounded text-sm disabled:opacity-50"
+          >
+            {bulkImporting ? "Importing..." : "Upload and Import"}
+          </button>
+
+          {bulkResult && (
+            <div className="mt-3 text-sm bg-ivory rounded-lg p-3">
+              <div className="font-medium mb-1">
+                ✅ {bulkResult.imported} imported, ⚠️ {bulkResult.skipped} skipped
+              </div>
+              {bulkResult.errors.length > 0 && (
+                <ul className="text-xs text-gray-600 space-y-0.5 list-disc pl-4 max-h-40 overflow-y-auto">
+                  {bulkResult.errors.map((err, i) => <li key={i}>{err}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
+        </form>
+      )}
 
       {showPaystackForm && (
         <form onSubmit={handlePayViaPaystack} className="bg-white border border-line rounded-2xl p-4 mb-6 space-y-3">
@@ -179,5 +313,13 @@ export default function DuesPage() {
 
       <div className="text-right font-semibold mt-3">Total: NGN {total.toLocaleString()}</div>
     </div>
+  );
+}
+
+export default function DuesPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <DuesPageContent />
+    </Suspense>
   );
 }

@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { clearSessionCookie, requireSession } from "@/lib/auth";
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    requireSession();
+  } catch {
+    return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
+
   const sectionId = Number(params.id);
   if (!Number.isInteger(sectionId)) {
     return NextResponse.json({ error: "Invalid section ID." }, { status: 400 });
@@ -27,10 +34,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     },
   });
 
-  return NextResponse.json(updated);
+  const response = NextResponse.json(updated);
+  clearSessionCookie();
+  return response;
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    requireSession();
+  } catch {
+    return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
+
   const sectionId = Number(params.id);
   if (!Number.isInteger(sectionId)) {
     return NextResponse.json({ error: "Invalid section ID." }, { status: 400 });
@@ -40,5 +55,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     where: { sectionId },
   });
 
-  return NextResponse.json({ success: true });
+  const response = NextResponse.json({ success: true });
+  clearSessionCookie();
+  return response;
 }

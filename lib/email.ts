@@ -71,7 +71,7 @@ export async function sendBirthdayEmail({
     : "";
 
   await transporter.sendMail({
-    from: `"School Alumni Association" <${process.env.GMAIL_USER}>`,
+    from: `"NEMSS 2014 SET" <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject: `Happy Birthday, ${firstName}! 🎉`,
     html: `
@@ -79,7 +79,7 @@ export async function sendBirthdayEmail({
         ${photoHtml}
         <h2>Happy Birthday, ${firstName}!</h2>
         <p style="font-size:15px;color:#333;">${message}</p>
-        <p style="font-size:13px;color:#888;">— From all of us at the Alumni Association</p>
+        <p style="font-size:13px;color:#888;">— From all of us at NEMSS 2014 SET</p>
       </div>
     `,
     attachments,
@@ -97,14 +97,14 @@ export async function sendNewMonthEmail({ toEmail, firstName, monthName }: NewMo
   const message = pickLine(NEW_MONTH_LINES);
 
   await transporter.sendMail({
-    from: `"School Alumni Association" <${process.env.GMAIL_USER}>`,
+    from: `"NEMSS 2014 SET" <${process.env.GMAIL_USER}>`,
     to: toEmail,
     subject: `Happy New Month, ${firstName}! 🎉`,
     html: `
       <div style="font-family:Arial,sans-serif;text-align:center;padding:24px;">
         <h2>Happy New Month, ${firstName}!</h2>
         <p style="font-size:15px;color:#333;">As we step into ${monthName}, ${message.charAt(0).toLowerCase() + message.slice(1)}</p>
-        <p style="font-size:13px;color:#888;">— From all of us at the Alumni Association</p>
+        <p style="font-size:13px;color:#888;">— From all of us at NEMSS 2014 SET</p>
       </div>
     `,
   });

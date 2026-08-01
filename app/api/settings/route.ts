@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { clearSessionCookie, requireSession } from "@/lib/auth";
 import { encryptBuffer, decryptBuffer } from "@/lib/crypto";
 
 // GET /api/settings — returns group name only (photo fetched via /api/settings/logo).
@@ -38,8 +38,10 @@ export async function POST(req: NextRequest) {
         data: { groupName: groupName || existing.groupName, logoData, logoContentType },
       })
     : await prisma.organizationSettings.create({
-        data: { groupName: groupName || "Alumni Association", logoData, logoContentType },
+        data: { groupName: groupName || "NEMSS 2014 SET", logoData, logoContentType },
       });
 
-  return NextResponse.json({ settingId: settings.settingId });
+  const response = NextResponse.json({ settingId: settings.settingId });
+  clearSessionCookie();
+  return response;
 }

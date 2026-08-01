@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { clearSessionCookie, requireSession } from "@/lib/auth";
 
 // GET /api/constitution — full table of contents with nested sub-sections.
 export async function GET() {
@@ -12,6 +13,12 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  try {
+    requireSession();
+  } catch {
+    return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
+
   const payload = await req.json();
   const title = String(payload.title || "").trim();
   const content = String(payload.content || "").trim();
@@ -31,5 +38,7 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return NextResponse.json(section, { status: 201 });
+  const response = NextResponse.json(section, { status: 201 });
+  clearSessionCookie();
+  return response;
 }

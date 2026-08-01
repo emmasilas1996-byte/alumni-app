@@ -3,7 +3,7 @@ import "./globals.css";
 import Navbar from "@/components/Navbar";
 
 export const metadata: Metadata = {
-  title: "NEMSS Alumni Association",
+  title: "NEMSS 2014 SET",
   description: "Members, contributions, dues, constitution, and gallery",
 };
 

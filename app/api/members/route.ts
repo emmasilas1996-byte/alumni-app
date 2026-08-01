@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { encryptBuffer, encryptText } from "@/lib/crypto";
+import { decryptText, encryptBuffer, encryptText } from "@/lib/crypto";
 
 // GET /api/members — list every member (execs + regular). No photo bytes
 // in the list response — those are fetched separately via /api/members/[id]/photo
@@ -18,10 +18,19 @@ export async function GET() {
       location: true,
       dateJoined: true,
       thoughts: true,
+      emailEncrypted: true,
+      phoneEncrypted: true,
     },
     orderBy: { lastName: "asc" },
   });
-  return NextResponse.json(members);
+
+  const decrypted = members.map((member) => ({
+    ...member,
+    email: member.emailEncrypted ? decryptText(Buffer.from(member.emailEncrypted)) : null,
+    phone: member.phoneEncrypted ? decryptText(Buffer.from(member.phoneEncrypted)) : null,
+  }));
+
+  return NextResponse.json(decrypted);
 }
 
 // POST /api/members — add a new member. Expects multipart/form-data so a

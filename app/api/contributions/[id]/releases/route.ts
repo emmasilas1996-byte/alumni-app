@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { clearSessionCookie, requireSession } from "@/lib/auth";
 import { encryptBuffer } from "@/lib/crypto";
 
 // GET /api/contributions/:id/releases — releases for this contribution + remaining balance.
@@ -94,5 +94,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     },
   });
 
-  return NextResponse.json(release, { status: 201 });
+  const response = NextResponse.json(release, { status: 201 });
+  clearSessionCookie();
+  return response;
 }

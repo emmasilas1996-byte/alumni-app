@@ -22,6 +22,7 @@ interface DashboardData {
   totalContributions: number;
   totalMonthlyDues: number;
   totalReleased: number;
+  netAvailableBalance: number;
   topContributors: Contributor[];
   todaysBirthdays: BirthdayMember[];
 }
@@ -128,6 +129,18 @@ export default function DashboardPage() {
             <div className="stat-card bg-white border border-line rounded-2xl p-5 hover:-translate-y-0.5 hover:shadow-lg transition-all">
               <div className="text-[11.5px] uppercase tracking-wide text-gray-500 font-semibold mb-2">Total Monthly Dues</div>
               <div className="font-display text-[26px] font-semibold text-navy">NGN {data.totalMonthlyDues.toLocaleString()}</div>
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-gold to-[#a5741f] rounded-2xl p-5 mb-4 text-navy">
+            <div className="flex justify-between items-center flex-wrap gap-2">
+              <div>
+                <div className="text-[11.5px] uppercase tracking-wide font-semibold mb-1 opacity-80">
+                  Net Available Balance
+                </div>
+                <div className="text-[11px] opacity-70">All contributions minus all funds released, all-time</div>
+              </div>
+              <div className="font-display text-[30px] font-bold">NGN {data.netAvailableBalance.toLocaleString()}</div>
             </div>
           </div>
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { encryptBuffer } from "@/lib/crypto";
 import { verifyPaystackWebhookSignature } from "@/lib/paystack";
 
 // POST /api/webhooks/paystack
@@ -37,6 +38,11 @@ export async function POST(req: NextRequest) {
 
   const { reference, amount, metadata } = event.data;
   const amountNaira = amount / 100;
+  const memberIdFromMetadata = Number(metadata?.memberId ?? metadata?.member_id ?? 0);
+
+  const payerUser = memberIdFromMetadata
+    ? await prisma.user.findUnique({ where: { memberId: memberIdFromMetadata } })
+    : null;
 
   // Guard against double-processing if Paystack retries the same webhook.
   const alreadyProcessed =
@@ -48,6 +54,20 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const receiptData = encryptBuffer(
+      Buffer.from(
+        JSON.stringify({
+          reference,
+          amountNaira,
+          paidAt: event.data?.paid_at || null,
+          currency: event.data?.currency || null,
+          metadata,
+          raw: event.data,
+        })
+      )
+    );
+    const receiptContentType = "application/json";
+
     if (metadata.purpose === "contribution") {
       await prisma.contributionPayment.create({
         data: {
@@ -56,6 +76,9 @@ export async function POST(req: NextRequest) {
           amount: amountNaira,
           paymentMethod: "Paystack",
           paystackReference: reference,
+          receiptData,
+          receiptContentType,
+          createdByUserId: payerUser?.userId,
         },
       });
     } else if (metadata.purpose === "dues") {
@@ -67,6 +90,9 @@ export async function POST(req: NextRequest) {
           amount: amountNaira,
           paymentMethod: "Paystack",
           paystackReference: reference,
+          receiptData,
+          receiptContentType,
+          createdByUserId: payerUser?.userId,
         },
       });
     }

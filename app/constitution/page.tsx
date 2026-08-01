@@ -1,321 +1,315 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
+import ConfirmModal from "@/components/ConfirmModal";
 
 interface Section {
   sectionId: number;
   title: string;
   content: string;
-  orderIndex: number;
-  parentSectionId: number | null;
+  parentSectionId?: number | null;
   children: Section[];
 }
 
-interface SectionForm {
-  title: string;
-  content: string;
-  orderIndex: string;
-  parentSectionId: string;
+// Flattens the nested TOC into one list (top-level + children) so the
+// "select which section to amend" view and the full-constitution view
+// can both iterate it simply.
+function flatten(sections: Section[]): Section[] {
+  const out: Section[] = [];
+  for (const s of sections) {
+    out.push(s);
+    if (s.children) out.push(...s.children);
+  }
+  return out;
 }
-
-const emptyForm: SectionForm = {
-  title: "",
-  content: "",
-  orderIndex: "1",
-  parentSectionId: "",
-};
 
 export default function ConstitutionPage() {
   const [sections, setSections] = useState<Section[]>([]);
-  const [active, setActive] = useState<Section | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [editingSection, setEditingSection] = useState<Section | null>(null);
-  const [form, setForm] = useState<SectionForm>(emptyForm);
-  const [submitting, setSubmitting] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<Section | null>(null);
+  const [viewing, setViewing] = useState<Section | null>(null);
 
-  async function loadSections() {
+  const [amendMode, setAmendMode] = useState(false);
+  const [editing, setEditing] = useState<Section | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editContent, setEditContent] = useState("");
+  const [error, setError] = useState("");
+
+  const [showNewForm, setShowNewForm] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newContent, setNewContent] = useState("");
+  const [newParentId, setNewParentId] = useState("");
+
+  const [deleteSectionId, setDeleteSectionId] = useState<number | null>(null);
+
+  const router = useRouter();
+  const pathname = usePathname();
+
+  async function load() {
     const res = await fetch("/api/constitution");
     setSections(await res.json());
   }
 
   useEffect(() => {
-    loadSections();
+    load();
   }, []);
 
-  function resetForm() {
-    setEditingSection(null);
-    setForm(emptyForm);
-    setShowForm(false);
-  }
-
-  function openForm(parentId?: number) {
-    setEditingSection(null);
-    setForm({ ...emptyForm, parentSectionId: parentId ? String(parentId) : "" });
-    setShowForm(true);
+  // "Amend" button — checks session first, same login-gate pattern used
+  // everywhere else in the app (Add Contribution, Add Dues, Member Edit).
+  async function handleAmendClick() {
+    try {
+      const res = await fetch("/api/auth/session");
+      if (!res.ok) {
+        router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+        return;
+      }
+      const session = await res.json();
+      if (!session.authenticated) {
+        router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+        return;
+      }
+      setViewing(null);
+      setAmendMode(true);
+    } catch {
+      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+    }
   }
 
   function startEdit(section: Section) {
-    setEditingSection(section);
-    setForm({
-      title: section.title,
-      content: section.content,
-      orderIndex: String(section.orderIndex),
-      parentSectionId: section.parentSectionId ? String(section.parentSectionId) : "",
+    setEditing(section);
+    setEditTitle(section.title);
+    setEditContent(section.content);
+    setError("");
+  }
+
+  async function handleSaveEdit() {
+    if (!editing) return;
+    setError("");
+    const res = await fetch(`/api/constitution/${editing.sectionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: editTitle, content: editContent }),
     });
-    setShowForm(true);
+    if (res.status === 401) {
+      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    setEditing(null);
+    load();
   }
 
   function confirmDelete(section: Section) {
-    setDeleteTarget(section);
+    setDeleteSectionId(section.sectionId);
   }
 
-  async function completeDelete() {
-    if (!deleteTarget) return;
-    const res = await fetch(`/api/constitution/${deleteTarget.sectionId}`, { method: "DELETE" });
-    if (!res.ok) {
-      const err = await res.json();
-      alert(err.error || "Could not delete section.");
+  async function handleDelete() {
+    if (deleteSectionId === null) return;
+    const res = await fetch(`/api/constitution/${deleteSectionId}`, { method: "DELETE" });
+    if (res.status === 401) {
+      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
       return;
     }
-    if (active?.sectionId === deleteTarget.sectionId) {
-      setActive(null);
-    }
-    setDeleteTarget(null);
-    loadSections();
+    setDeleteSectionId(null);
+    setEditing(null);
+    load();
   }
 
-  function cancelDelete() {
-    setDeleteTarget(null);
-  }
-
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    setSubmitting(true);
-
-    const payload = {
-      title: form.title.trim(),
-      content: form.content.trim(),
-      orderIndex: Number(form.orderIndex),
-      parentSectionId: form.parentSectionId ? Number(form.parentSectionId) : null,
-    };
-
-    if (!payload.title || !payload.content || !payload.orderIndex) {
-      alert("Please provide a title, content, and order.");
-      setSubmitting(false);
-      return;
-    }
-
-    const url = editingSection ? `/api/constitution/${editingSection.sectionId}` : "/api/constitution";
-    const method = editingSection ? "PATCH" : "POST";
-    const res = await fetch(url, {
-      method,
+    setError("");
+    const res = await fetch("/api/constitution", {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        title: newTitle,
+        content: newContent,
+        parentSectionId: newParentId ? Number(newParentId) : null,
+      }),
     });
-
-    setSubmitting(false);
-    if (!res.ok) {
-      const err = await res.json();
-      alert(err.error || "Could not save constitution section.");
+    if (res.status === 401) {
+      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
       return;
     }
-
-    resetForm();
-    loadSections();
+    setShowNewForm(false);
+    setNewTitle("");
+    setNewContent("");
+    setNewParentId("");
+    load();
   }
 
-  return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
+  const flatSections = flatten(sections);
+
+  // ---------- AMEND MODE: pick a section to edit, or add a new one ----------
+  if (amendMode) {
+    if (editing) {
+      return (
         <div>
-          <h1 className="font-display text-[26px] font-semibold">Constitution</h1>
-          <p className="text-sm text-gray-500">Create and manage your constitution sections directly inside the app.</p>
-        </div>
-        <button
-          onClick={() => openForm()}
-          className="bg-navy text-white rounded-full px-4 py-2 text-sm"
-        >
-          + Add section
-        </button>
-      </div>
-
-      {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white border border-line rounded-2xl p-6 mb-6 space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <input
-              value={form.title}
-              onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
-              placeholder="Section title"
-              className="border rounded px-3 py-2 w-full"
-              required
-            />
-            <input
-              value={form.orderIndex}
-              onChange={(e) => setForm((prev) => ({ ...prev, orderIndex: e.target.value }))}
-              placeholder="Order"
-              type="number"
-              min="1"
-              className="border rounded px-3 py-2 w-full"
-              required
-            />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <select
-              value={form.parentSectionId}
-              onChange={(e) => setForm((prev) => ({ ...prev, parentSectionId: e.target.value }))}
-              className="border rounded px-3 py-2 w-full"
-            >
-              <option value="">Top-level section</option>
-              {sections.map((section) => (
-                <option key={section.sectionId} value={section.sectionId}>
-                  {section.title}
-                </option>
-              ))}
-            </select>
-            <div className="text-right">
-              <button
-                type="button"
-                onClick={resetForm}
-                className="text-sm text-gray-600 mr-3"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="bg-navy text-white rounded-full px-4 py-2 text-sm disabled:opacity-50"
-              >
-                {editingSection ? "Save section" : "Create section"}
-              </button>
-            </div>
-          </div>
-          <textarea
-            value={form.content}
-            onChange={(e) => setForm((prev) => ({ ...prev, content: e.target.value }))}
-            placeholder="Section content"
-            rows={8}
-            className="border rounded px-3 py-2 w-full"
-            required
-          />
-        </form>
-      )}
-
-      <div className="bg-white border border-line rounded-2xl divide-y">
-        {sections.length === 0 ? (
-          <div className="p-6 text-sm text-gray-500">No constitution content yet. Start by creating your first section.</div>
-        ) : (
-          sections.map((section) => (
-            <div key={section.sectionId} className="border-b border-line last:border-b-0">
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 p-4">
-                <div>
-                  <button
-                    onClick={() => setActive(section)}
-                    className="text-left text-lg font-medium hover:text-navy"
-                  >
-                    {section.title}
-                  </button>
-                  <p className="text-sm text-gray-500 mt-1">{section.children.length} subsection{section.children.length === 1 ? "" : "s"}</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => openForm(section.sectionId)}
-                    className="text-sm text-navy border border-navy rounded-full px-3 py-1"
-                  >
-                    Add subsection
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => startEdit(section)}
-                    className="text-sm text-gray-700 border border-line rounded-full px-3 py-1"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => confirmDelete(section)}
-                    className="text-sm text-red-600 border border-red-200 rounded-full px-3 py-1"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-              {section.children.length > 0 && (
-                <div className="space-y-1 border-t border-line bg-slate-50 px-4 py-3">
-                  {section.children.map((child) => (
-                    <div key={child.sectionId} className="rounded-2xl bg-white p-3 border border-line">
-                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                        <button
-                          onClick={() => setActive(child)}
-                          className="text-left font-medium hover:text-navy"
-                        >
-                          {child.title}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => startEdit(child)}
-                          className="text-sm text-gray-700 border border-line rounded-full px-3 py-1"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => confirmDelete(child)}
-                          className="text-sm text-red-600 border border-red-200 rounded-full px-3 py-1"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))
-        )}
-      </div>
-
-      {active && (
-        <div className="mt-6">
-          <button onClick={() => setActive(null)} className="text-sm text-navy mb-4">
-            ← Back to Table of Contents
+          <button onClick={() => setEditing(null)} className="text-sm text-navy mb-4 font-medium">
+            ← Back to section list
           </button>
-          <h2 className="font-display text-[24px] font-semibold mb-3">{active.title}</h2>
-          <div className="bg-white border border-line rounded-2xl p-6 whitespace-pre-wrap text-sm leading-relaxed">
-            {active.content}
-          </div>
-        </div>
-      )}
-
-      {deleteTarget ? (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4 py-6">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full overflow-hidden">
-            <div className="p-6">
-              <h2 className="font-display text-xl font-semibold mb-2">Delete Section</h2>
-              <p className="text-sm text-gray-600 mb-4">
-                Are you sure you want to delete "{deleteTarget.title}" and all its subsections? This cannot be undone.
-              </p>
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={cancelDelete}
-                  className="rounded-full border border-line px-4 py-2 text-sm text-gray-700"
-                >
+          <div className="bg-white border border-line rounded-2xl p-6">
+            {error && <div className="text-sm text-red-600 mb-3">{error}</div>}
+            <input
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              className="w-full border border-line rounded-lg px-3 py-2 mb-3 font-display text-lg font-semibold"
+            />
+            <textarea
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              rows={16}
+              className="w-full border border-line rounded-lg px-3 py-2 text-sm leading-relaxed mb-3"
+            />
+            <div className="flex justify-between">
+              <button onClick={() => confirmDelete(editing)} className="text-sm text-red-600">
+                Delete this section
+              </button>
+              <div className="flex gap-3">
+                <button onClick={() => setEditing(null)} className="border border-line px-4 py-2 rounded-lg text-sm">
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  onClick={completeDelete}
-                  className="rounded-full bg-red-600 text-white px-4 py-2 text-sm"
-                >
-                  Delete section
+                <button onClick={handleSaveEdit} className="bg-navy text-white px-4 py-2 rounded-lg text-sm font-medium">
+                  Save Changes
                 </button>
               </div>
             </div>
           </div>
+
+          {deleteSectionId !== null && (
+            <ConfirmModal
+              title="Delete section"
+              description="This will also delete any sub-sections under it. This cannot be undone."
+              confirmLabel="Delete section"
+              cancelLabel="Cancel"
+              onConfirm={handleDelete}
+              onCancel={() => setDeleteSectionId(null)}
+            />
+          )}
         </div>
-      ) : null}
+      );
+    }
+
+    return (
+      <div>
+        <div className="flex justify-between items-center mb-1 flex-wrap gap-3">
+          <h1 className="font-display text-[26px] font-semibold">Amend Constitution</h1>
+          <button onClick={() => setAmendMode(false)} className="text-sm text-gray-500">
+            Done — back to view mode
+          </button>
+        </div>
+        <p className="text-[13.5px] text-gray-500 mb-6">Select a section below to amend it.</p>
+
+        <button
+          onClick={() => setShowNewForm((s) => !s)}
+          className="bg-navy text-white px-4 py-2 rounded-lg text-sm font-medium mb-4"
+        >
+          {showNewForm ? "Cancel" : "+ Add New Section"}
+        </button>
+
+        {showNewForm && (
+          <form onSubmit={handleCreate} className="bg-white border border-line rounded-2xl p-4 mb-6 space-y-3">
+            {error && <div className="text-sm text-red-600">{error}</div>}
+            <input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="Section title (e.g. 5. Amendments)"
+              required
+              className="w-full border border-line rounded-lg px-3 py-2"
+            />
+            <select
+              value={newParentId}
+              onChange={(e) => setNewParentId(e.target.value)}
+              className="w-full border border-line rounded-lg px-3 py-2"
+            >
+              <option value="">Top-level section</option>
+              {sections.map((s) => (
+                <option key={s.sectionId} value={s.sectionId}>Sub-section of: {s.title}</option>
+              ))}
+            </select>
+            <textarea
+              value={newContent}
+              onChange={(e) => setNewContent(e.target.value)}
+              placeholder="Section text..."
+              rows={8}
+              required
+              className="w-full border border-line rounded-lg px-3 py-2"
+            />
+            <button type="submit" className="bg-navy text-white px-4 py-2 rounded-lg text-sm font-medium">
+              Save Section
+            </button>
+          </form>
+        )}
+
+        <div className="bg-white border border-line rounded-2xl divide-y divide-line">
+          {flatSections.map((s) => (
+            <button
+              key={s.sectionId}
+              onClick={() => startEdit(s)}
+              className="w-full text-left p-3 hover:bg-ivory font-medium transition-colors flex justify-between items-center"
+            >
+              <span>{s.parentSectionId ? `↳ ${s.title}` : s.title}</span>
+              <span className="text-xs text-navy">Amend →</span>
+            </button>
+          ))}
+          {flatSections.length === 0 && <div className="p-4 text-sm text-gray-500">No sections yet — add one above.</div>}
+        </div>
+      </div>
+    );
+  }
+
+  // ---------- VIEW MODE: full constitution list, click a section to pop it open ----------
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-1 flex-wrap gap-3">
+        <h1 className="font-display text-[26px] font-semibold">Constitution</h1>
+        <button
+          onClick={handleAmendClick}
+          className="border border-navy text-navy px-4 py-2 rounded-lg text-sm font-medium"
+        >
+          Amend
+        </button>
+      </div>
+      <p className="text-[13.5px] text-gray-500 mb-6">Click any section below to read it in full.</p>
+
+      <div className="bg-white border border-line rounded-2xl divide-y divide-line">
+        {sections.map((s) => (
+          <div key={s.sectionId}>
+            <button onClick={() => setViewing(s)} className="w-full text-left p-3 hover:bg-ivory font-medium transition-colors">
+              {s.title}
+            </button>
+            {s.children?.map((c) => (
+              <button
+                key={c.sectionId}
+                onClick={() => setViewing(c)}
+                className="w-full text-left pl-8 pr-3 py-2 hover:bg-ivory text-sm text-gray-600 border-t border-line transition-colors"
+              >
+                {c.title}
+              </button>
+            ))}
+          </div>
+        ))}
+        {sections.length === 0 && <div className="p-4 text-sm text-gray-500">No constitution content yet.</div>}
+      </div>
+
+      {/* SECTION POPUP — closing returns to this list to pick another */}
+      {viewing && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setViewing(null)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-2xl w-full max-h-[85vh] overflow-y-auto shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center p-4 border-b border-line sticky top-0 bg-white">
+              <div className="font-display text-lg font-semibold">{viewing.title}</div>
+              <button onClick={() => setViewing(null)} className="text-sm text-gray-600 hover:text-black">
+                Close
+              </button>
+            </div>
+            <div className="p-6 whitespace-pre-wrap text-sm leading-relaxed">{viewing.content}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
