@@ -54,7 +54,11 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
   const [showForm, setShowForm] = useState(false);
   const [showPaystackForm, setShowPaystackForm] = useState(false);
   const [showReleaseForm, setShowReleaseForm] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [error, setError] = useState("");
+  const [bulkError, setBulkError] = useState("");
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
   const [paystackError, setPaystackError] = useState("");
   const [paystackLoading, setPaystackLoading] = useState(false);
   const [releaseError, setReleaseError] = useState("");
@@ -90,6 +94,22 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
   useEffect(() => {
     load();
   }, [params.id]);
+
+  async function ensureAuthenticated(next: () => void) {
+    try {
+      const res = await fetch("/api/auth/session");
+      if (res.ok) {
+        const body = await res.json();
+        if (body.authenticated) {
+          next();
+          return;
+        }
+      }
+    } catch {
+      // fall through to login redirect
+    }
+    window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+  }
 
   useEffect(() => {
     const reference = searchParams.get("reference");
@@ -145,13 +165,25 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
   async function handleAddPayer(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
+
+    const authRes = await fetch("/api/auth/session");
+    if (!authRes.ok) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    const authBody = await authRes.json().catch(() => ({}));
+    if (!authBody.authenticated) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+
     const formData = new FormData(e.currentTarget);
     const res = await fetch(`/api/contributions/${params.id}/payments`, {
       method: "POST",
       body: formData,
     });
     if (res.status === 401) {
-      setError("Sign in required to add a payer.");
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
       return;
     }
     setShowForm(false);
@@ -163,13 +195,25 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
   async function handleRelease(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setReleaseError("");
+
+    const authRes = await fetch("/api/auth/session");
+    if (!authRes.ok) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    const authBody = await authRes.json().catch(() => ({}));
+    if (!authBody.authenticated) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+
     const formData = new FormData(e.currentTarget);
     const res = await fetch(`/api/contributions/${params.id}/releases`, {
       method: "POST",
       body: formData,
     });
     if (res.status === 401) {
-      setReleaseError("Sign in required to release funds.");
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
       return;
     }
     if (!res.ok) {
@@ -178,6 +222,46 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
       return;
     }
     setShowReleaseForm(false);
+    (e.target as HTMLFormElement).reset();
+    setAuthenticated(false);
+    load();
+  }
+
+  async function handleBulkImport(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBulkError("");
+    setBulkResult(null);
+    setBulkImporting(true);
+
+    const authRes = await fetch("/api/auth/session");
+    if (!authRes.ok) {
+      setBulkImporting(false);
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    const authBody = await authRes.json().catch(() => ({}));
+    if (!authBody.authenticated) {
+      setBulkImporting(false);
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+
+    const formData = new FormData(e.currentTarget);
+    const res = await fetch(`/api/contributions/${params.id}/bulk-import`, {
+      method: "POST",
+      body: formData,
+    });
+    setBulkImporting(false);
+    if (res.status === 401) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    const body = await res.json();
+    if (!res.ok) {
+      setBulkError(body.error || "Could not process the CSV file.");
+      return;
+    }
+    setBulkResult(body);
     (e.target as HTMLFormElement).reset();
     setAuthenticated(false);
     load();
@@ -194,24 +278,36 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
 
       <div className="flex gap-3 mb-4 flex-wrap">
         <button
-          onClick={() => { setShowPaystackForm((s) => !s); setShowForm(false); setShowReleaseForm(false); }}
+          onClick={() => { setShowPaystackForm((s) => !s); setShowForm(false); setShowReleaseForm(false); setShowBulkImport(false); }}
           className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
         >
           {showPaystackForm ? "Cancel" : "💳 Pay via Paystack"}
         </button>
         <button
           onClick={() => {
-            if (!authenticated) {
-              router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
-              return;
-            }
-            setShowForm((s) => !s);
-            setShowPaystackForm(false);
-            setShowReleaseForm(false);
+            void ensureAuthenticated(() => {
+              setShowForm((s) => !s);
+              setShowPaystackForm(false);
+              setShowReleaseForm(false);
+              setShowBulkImport(false);
+            });
           }}
           className="bg-navy text-white px-4 py-2 rounded-lg text-sm font-medium"
         >
           {showForm ? "Cancel" : "+ Manual / Cash (login required)"}
+        </button>
+        <button
+          onClick={() => {
+            void ensureAuthenticated(() => {
+              setShowBulkImport((s) => !s);
+              setShowForm(false);
+              setShowPaystackForm(false);
+              setShowReleaseForm(false);
+            });
+          }}
+          className="border border-navy text-navy px-4 py-2 rounded-lg text-sm font-medium"
+        >
+          {showBulkImport ? "Cancel" : "📤 Upload Historical Payments (CSV, login required)"}
         </button>
         <a
           href={`/api/contributions/${params.id}/export`}
@@ -256,6 +352,34 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
         </form>
       )}
 
+      {showBulkImport && (
+        <form onSubmit={handleBulkImport} className="bg-white border border-line rounded-2xl p-4 mb-6 space-y-3">
+          {bulkError && <div className="text-sm text-red-600">{bulkError}</div>}
+          <p className="text-xs text-gray-500">
+            For recording contribution payments collected in past periods before this app existed. Upload a CSV with columns: {" "}
+            <span className="bg-gray-100 px-1 rounded">FirstName,LastName,Amount,PaymentDate</span>{" "}
+            (PaymentDate is optional and can be YYYY-MM-DD). Names must match existing Members exactly.
+          </p>
+          <input name="file" type="file" accept=".csv,text/csv" required className="block text-sm" />
+          <button type="submit" disabled={bulkImporting} className="bg-navy text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+            {bulkImporting ? "Importing..." : "Upload and Import"}
+          </button>
+
+          {bulkResult && (
+            <div className="mt-3 text-sm bg-ivory rounded-lg p-3">
+              <div className="font-medium mb-1">
+                ✅ {bulkResult.imported} imported, ⚠️ {bulkResult.skipped} skipped
+              </div>
+              {bulkResult.errors.length > 0 && (
+                <ul className="text-xs text-gray-600 space-y-0.5 list-disc pl-4 max-h-40 overflow-y-auto">
+                  {bulkResult.errors.map((error, index) => <li key={index}>{error}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
+        </form>
+      )}
+
       <div className="bg-white border border-line rounded-2xl divide-y divide-line mb-4">
         {data.payments.map((p) => (
           <div key={p.paymentId} className="flex justify-between p-3 text-sm">
@@ -279,7 +403,13 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
             </div>
           </div>
           <button
-            onClick={() => { setShowReleaseForm((s) => !s); setShowForm(false); setShowPaystackForm(false); }}
+            onClick={() => {
+              void ensureAuthenticated(() => {
+                setShowReleaseForm((s) => !s);
+                setShowForm(false);
+                setShowPaystackForm(false);
+              });
+            }}
             className="bg-gold text-navy px-4 py-2 rounded-lg text-sm font-semibold"
           >
             {showReleaseForm ? "Cancel" : "💸 Release Funds (login required)"}

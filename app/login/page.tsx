@@ -42,7 +42,7 @@ function LoginForm() {
     <div className="max-w-sm mx-auto mt-10">
       <h1 className="font-display text-[26px] font-semibold mb-1">Sign In</h1>
       <p className="text-sm text-gray-500 mb-6">
-        Needed only to add a contribution or record a monthly due. Everything else in the app stays open.
+        Sign in is needed to perform this action.
       </p>
       <form onSubmit={handleSubmit} className="bg-white border border-line rounded-2xl p-4 space-y-3">
         {error && <div className="text-sm text-red-600">{error}</div>}

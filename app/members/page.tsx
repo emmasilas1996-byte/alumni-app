@@ -29,6 +29,7 @@ export default function MembersPage() {
   const [editError, setEditError] = useState("");
   const [deleteMemberId, setDeleteMemberId] = useState<number | null>(null);
   const [photoVersion, setPhotoVersion] = useState(0);
+  const [viewedPhotoMember, setViewedPhotoMember] = useState<Member | null>(null);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -41,8 +42,28 @@ export default function MembersPage() {
     load();
   }, []);
 
+  async function ensureAuthenticated(next: () => void) {
+    try {
+      const res = await fetch("/api/auth/session");
+      if (res.ok) {
+        const session = await res.json();
+        if (session.authenticated) {
+          next();
+          return true;
+        }
+      }
+    } catch {
+      // fall through to login redirect
+    }
+    window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+    return false;
+  }
+
   async function handleAdd(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const authenticated = await ensureAuthenticated(() => undefined);
+    if (!authenticated) return;
+
     setSubmitting(true);
     const formData = new FormData(e.currentTarget);
     const res = await fetch("/api/members", { method: "POST", body: formData });
@@ -52,6 +73,10 @@ export default function MembersPage() {
       (e.target as HTMLFormElement).reset();
       load();
     } else {
+      if (res.status === 401) {
+        window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+        return;
+      }
       const err = await res.json();
       alert(err.error || "Could not add member.");
     }
@@ -61,19 +86,18 @@ export default function MembersPage() {
   // the person to /login and back here, matching how Add Contribution /
   // Add Dues already work elsewhere in the app.
   async function handleEditClick(member: Member) {
-    const res = await fetch("/api/auth/session");
-    const session = await res.json();
-    if (!session.authenticated) {
-      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
-      return;
-    }
-    setEditError("");
-    setEditingMember(member);
+    await ensureAuthenticated(() => {
+      setEditError("");
+      setEditingMember(member);
+    });
   }
 
   async function handleSaveEdit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!editingMember) return;
+    const authenticated = await ensureAuthenticated(() => undefined);
+    if (!authenticated) return;
+
     setSavingEdit(true);
     setEditError("");
     const formData = new FormData(e.currentTarget);
@@ -84,7 +108,7 @@ export default function MembersPage() {
     setSavingEdit(false);
 
     if (res.status === 401) {
-      setEditError("Sign in required to save changes.");
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
       return;
     }
     if (!res.ok) {
@@ -98,16 +122,21 @@ export default function MembersPage() {
     load();
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!editingMember) return;
-    setDeleteMemberId(editingMember.memberId);
+    await ensureAuthenticated(() => {
+      setDeleteMemberId(editingMember.memberId);
+    });
   }
 
   async function handleDelete() {
     if (deleteMemberId === null) return;
+    const authenticated = await ensureAuthenticated(() => undefined);
+    if (!authenticated) return;
+
     const res = await fetch(`/api/members/${deleteMemberId}`, { method: "DELETE" });
     if (res.status === 401) {
-      setEditError("Sign in required to delete a member.");
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
       setDeleteMemberId(null);
       return;
     }
@@ -138,7 +167,21 @@ export default function MembersPage() {
       <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
         <h1 className="font-display text-[26px] font-semibold">Members</h1>
         <button
-          onClick={() => setShowForm((s) => !s)}
+          onClick={async () => {
+            try {
+              const res = await fetch("/api/auth/session");
+              if (res.ok) {
+                const body = await res.json();
+                if (body.authenticated) {
+                  setShowForm((s) => !s);
+                  return;
+                }
+              }
+            } catch {
+              // fall through to login redirect
+            }
+            window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+          }}
           className="bg-navy text-white px-4 py-2 rounded text-sm"
         >
           {showForm ? "Cancel" : "+ Add Member"}
@@ -204,7 +247,8 @@ export default function MembersPage() {
             <img
               src={`/api/members/${m.memberId}/photo?v=${photoVersion}`}
               alt={m.firstName}
-              className="w-10 h-10 rounded-full object-cover bg-gray-200"
+              className="w-10 h-10 rounded-full object-cover bg-gray-200 cursor-pointer"
+              onClick={() => setViewedPhotoMember(m)}
               onError={(e) => ((e.target as HTMLImageElement).style.visibility = "hidden")}
             />
             <div className="flex-1">
@@ -234,6 +278,20 @@ export default function MembersPage() {
           </div>
         )}
       </div>
+
+      {viewedPhotoMember ? (
+        <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4" onClick={() => setViewedPhotoMember(null)}>
+          <div className="relative max-w-3xl w-full" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setViewedPhotoMember(null)} className="absolute right-3 top-3 text-white text-xl">✕</button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`/api/members/${viewedPhotoMember.memberId}/photo?v=${photoVersion}`}
+              alt={viewedPhotoMember.firstName}
+              className="w-full max-h-[80vh] object-contain rounded-2xl bg-white/10"
+            />
+          </div>
+        </div>
+      ) : null}
 
       {/* EDIT MODAL — reachable only after the session check above passes */}
       {editingMember ? (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 
 interface Contribution {
@@ -13,6 +13,7 @@ interface Contribution {
 
 export default function ContributionsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [contributions, setContributions] = useState<Contribution[]>([]);
   const [query, setQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -32,26 +33,64 @@ export default function ContributionsPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    const res = await fetch("/api/contributions", {
+
+    const res = await fetch("/api/auth/session");
+    if (!res.ok) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    const body = await res.json().catch(() => ({}));
+    if (!body.authenticated) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+
+    const createRes = await fetch("/api/contributions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, description }),
     });
-    if (res.status === 401) {
-      router.push(`/login?redirect=${encodeURIComponent("/contributions")}`);
+
+    if (createRes.status === 401) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
       return;
     }
+
+    if (!createRes.ok) {
+      const errorBody = await createRes.json().catch(() => ({}));
+      setError(errorBody.error || "Could not create contribution.");
+      return;
+    }
+
     setShowForm(false);
     setTitle("");
     setDescription("");
-    load();
+    await load();
   }
 
   return (
     <div>
       <div className="flex justify-between items-center mb-1">
         <h1 className="font-display text-[26px] font-semibold">Contributions</h1>
-        <button onClick={() => setShowForm((s) => !s)} className="bg-navy text-white px-4 py-2 rounded text-sm">
+        <button
+          onClick={async () => {
+            try {
+              const res = await fetch("/api/auth/session");
+              if (res.ok) {
+                const body = await res.json();
+                if (body.authenticated) {
+                  setShowForm((s) => !s);
+                  setError("");
+                  return;
+                }
+              }
+            } catch {
+              // fall through to login redirect
+            }
+            window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+          }}
+          className="bg-navy text-white px-4 py-2 rounded text-sm"
+        >
           {showForm ? "Cancel" : "+ New Contribution"}
         </button>
       </div>

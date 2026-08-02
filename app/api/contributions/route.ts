@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireSession, clearSessionCookie } from "@/lib/auth";
+import { requireSession } from "@/lib/auth";
 
 // GET /api/contributions — static list of all contribution types
 // (no year/month filter — only Monthly Dues is filtered that way).
@@ -34,6 +34,5 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  clearSessionCookie();
   return NextResponse.json(contribution, { status: 201 });
 }

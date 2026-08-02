@@ -53,9 +53,7 @@ export default function ConstitutionPage() {
     load();
   }, []);
 
-  // "Amend" button — checks session first, same login-gate pattern used
-  // everywhere else in the app (Add Contribution, Add Dues, Member Edit).
-  async function handleAmendClick() {
+  async function ensureAuthenticated(next: () => void) {
     try {
       const res = await fetch("/api/auth/session");
       if (!res.ok) {
@@ -67,23 +65,45 @@ export default function ConstitutionPage() {
         router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
         return;
       }
-      setViewing(null);
-      setAmendMode(true);
+      next();
     } catch {
       router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
     }
   }
 
-  function startEdit(section: Section) {
-    setEditing(section);
-    setEditTitle(section.title);
-    setEditContent(section.content);
-    setError("");
+  // "Amend" button — checks session first, same login-gate pattern used
+  // everywhere else in the app (Add Contribution, Add Dues, Member Edit).
+  async function handleAmendClick() {
+    await ensureAuthenticated(() => {
+      setViewing(null);
+      setAmendMode(true);
+    });
+  }
+
+  async function startEdit(section: Section) {
+    await ensureAuthenticated(() => {
+      setEditing(section);
+      setEditTitle(section.title);
+      setEditContent(section.content);
+      setError("");
+    });
   }
 
   async function handleSaveEdit() {
     if (!editing) return;
     setError("");
+
+    const authRes = await fetch("/api/auth/session");
+    if (!authRes.ok) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    const authBody = await authRes.json().catch(() => ({}));
+    if (!authBody.authenticated) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+
     const res = await fetch(`/api/constitution/${editing.sectionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -97,15 +117,28 @@ export default function ConstitutionPage() {
     load();
   }
 
-  function confirmDelete(section: Section) {
-    setDeleteSectionId(section.sectionId);
+  async function confirmDelete(section: Section) {
+    await ensureAuthenticated(() => {
+      setDeleteSectionId(section.sectionId);
+    });
   }
 
   async function handleDelete() {
     if (deleteSectionId === null) return;
+    const authRes = await fetch("/api/auth/session");
+    if (!authRes.ok) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    const authBody = await authRes.json().catch(() => ({}));
+    if (!authBody.authenticated) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+
     const res = await fetch(`/api/constitution/${deleteSectionId}`, { method: "DELETE" });
     if (res.status === 401) {
-      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
       return;
     }
     setDeleteSectionId(null);
@@ -116,6 +149,18 @@ export default function ConstitutionPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    const authRes = await fetch("/api/auth/session");
+    if (!authRes.ok) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    const authBody = await authRes.json().catch(() => ({}));
+    if (!authBody.authenticated) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+
     const res = await fetch("/api/constitution", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -160,7 +205,7 @@ export default function ConstitutionPage() {
               className="w-full border border-line rounded-lg px-3 py-2 text-sm leading-relaxed mb-3"
             />
             <div className="flex justify-between">
-              <button onClick={() => confirmDelete(editing)} className="text-sm text-red-600">
+              <button onClick={() => void confirmDelete(editing)} className="text-sm text-red-600">
                 Delete this section
               </button>
               <div className="flex gap-3">
@@ -199,7 +244,21 @@ export default function ConstitutionPage() {
         <p className="text-[13.5px] text-gray-500 mb-6">Select a section below to amend it.</p>
 
         <button
-          onClick={() => setShowNewForm((s) => !s)}
+          onClick={async () => {
+            try {
+              const res = await fetch("/api/auth/session");
+              if (res.ok) {
+                const body = await res.json();
+                if (body.authenticated) {
+                  setShowNewForm((s) => !s);
+                  return;
+                }
+              }
+            } catch {
+              // fall through to login redirect
+            }
+            window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+          }}
           className="bg-navy text-white px-4 py-2 rounded-lg text-sm font-medium mb-4"
         >
           {showNewForm ? "Cancel" : "+ Add New Section"}
@@ -243,7 +302,9 @@ export default function ConstitutionPage() {
           {flatSections.map((s) => (
             <button
               key={s.sectionId}
-              onClick={() => startEdit(s)}
+              onClick={() => {
+                void startEdit(s);
+              }}
               className="w-full text-left p-3 hover:bg-ivory font-medium transition-colors flex justify-between items-center"
             >
               <span>{s.parentSectionId ? `↳ ${s.title}` : s.title}</span>

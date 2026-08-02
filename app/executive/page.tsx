@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import ConfirmModal from "@/components/ConfirmModal";
+import { useRouter, usePathname } from "next/navigation";
 
 interface Member {
   memberId: number;
@@ -16,7 +16,31 @@ export default function ExecutivePage() {
   const [allMembers, setAllMembers] = useState<Member[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [title, setTitle] = useState("");
-  const [deleteExecId, setDeleteExecId] = useState<number | null>(null);
+  const [editingExec, setEditingExec] = useState<Member | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [replacementMemberId, setReplacementMemberId] = useState("");
+  const [editError, setEditError] = useState("");
+  const [authorized, setAuthorized] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+
+  async function ensureAuthenticated(next: () => void) {
+    try {
+      const res = await fetch("/api/auth/session");
+      if (!res.ok) {
+        router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+        return;
+      }
+      const session = await res.json();
+      if (!session.authenticated) {
+        router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+        return;
+      }
+      next();
+    } catch {
+      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+    }
+  }
 
   async function load() {
     const [execRes, memberRes] = await Promise.all([
@@ -28,37 +52,99 @@ export default function ExecutivePage() {
   }
 
   useEffect(() => {
-    load();
+    void ensureAuthenticated(() => {
+      setAuthorized(true);
+      void load();
+    });
   }, []);
 
   const nonExecMembers = allMembers.filter((m) => !m.isExecutive);
+  const replacementCandidates = allMembers.filter((m) => m.memberId !== editingExec?.memberId && !m.isExecutive);
 
   async function handleAssign(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedMemberId) return;
+    await ensureAuthenticated(() => undefined);
+
     await fetch(`/api/members/${selectedMemberId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isExecutive: true, executiveTitle: title || "Executive" }),
     });
+
     setSelectedMemberId("");
     setTitle("");
     load();
   }
 
-  function confirmRemove(memberId: number) {
-    setDeleteExecId(memberId);
+  function openEditExec(member: Member) {
+    void ensureAuthenticated(() => {
+      setEditingExec(member);
+      setEditTitle(member.executiveTitle || "");
+      setReplacementMemberId("");
+      setEditError("");
+    });
   }
 
-  async function handleRemove() {
-    if (deleteExecId === null) return;
-    await fetch(`/api/members/${deleteExecId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isExecutive: false, executiveTitle: null }),
+  async function handleSaveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingExec) return;
+    setEditError("");
+
+    await ensureAuthenticated(async () => {
+      try {
+        if (replacementMemberId) {
+          await fetch(`/api/members/${editingExec.memberId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isExecutive: false, executiveTitle: null }),
+          });
+
+          await fetch(`/api/members/${replacementMemberId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isExecutive: true, executiveTitle: editTitle || "Executive" }),
+          });
+        } else {
+          await fetch(`/api/members/${editingExec.memberId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isExecutive: true, executiveTitle: editTitle || "Executive" }),
+          });
+        }
+
+        setEditingExec(null);
+        setReplacementMemberId("");
+        setEditTitle("");
+        await load();
+      } catch {
+        setEditError("Could not update executive details.");
+      }
     });
-    setDeleteExecId(null);
-    load();
+  }
+
+  async function handleRemoveFromExec() {
+    if (!editingExec) return;
+    await ensureAuthenticated(() => undefined);
+
+    try {
+      await fetch(`/api/members/${editingExec.memberId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isExecutive: false, executiveTitle: null }),
+      });
+
+      setEditingExec(null);
+      setEditTitle("");
+      setReplacementMemberId("");
+      await load();
+    } catch {
+      setEditError("Could not remove executive role.");
+    }
+  }
+
+  if (!authorized) {
+    return <div className="p-4 text-sm text-gray-500">Checking access...</div>;
   }
 
   return (
@@ -110,23 +196,60 @@ export default function ExecutivePage() {
               <div className="font-medium">{m.firstName} {m.lastName}</div>
               <div className="text-xs text-gray-500">{m.executiveTitle}</div>
             </div>
-            <button onClick={() => confirmRemove(m.memberId)} className="text-sm text-red-600">
-              Remove
+            <button onClick={() => openEditExec(m)} className="text-sm text-navy border border-navy px-3 py-1.5 rounded-lg">
+              Edit
             </button>
           </div>
         ))}
         {execs.length === 0 && <div className="p-4 text-sm text-gray-500">No executives assigned yet.</div>}
       </div>
 
-      {deleteExecId !== null ? (
-        <ConfirmModal
-          title="Remove executive title"
-          description="Are you sure you want to remove this member from the executive list? They will remain in Members."
-          confirmLabel="Remove"
-          cancelLabel="Cancel"
-          onConfirm={handleRemove}
-          onCancel={() => setDeleteExecId(null)}
-        />
+      {editingExec ? (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setEditingExec(null)}>
+          <div className="bg-white rounded-3xl max-w-lg w-full p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <div className="text-lg font-semibold">Edit executive</div>
+              <button onClick={() => setEditingExec(null)} className="text-sm text-gray-600">Close</button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-3">
+              {editError && <div className="text-sm text-red-600">{editError}</div>}
+
+              <label className="text-sm text-gray-600 block">
+                Role / Title
+                <input
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="e.g. President"
+                  className="border rounded px-3 py-2 w-full mt-1"
+                />
+              </label>
+
+              <label className="text-sm text-gray-600 block">
+                Replace with another member (optional)
+                <select
+                  value={replacementMemberId}
+                  onChange={(e) => setReplacementMemberId(e.target.value)}
+                  className="border rounded px-3 py-2 w-full mt-1"
+                >
+                  <option value="">Keep current executive</option>
+                  {replacementCandidates.map((m) => (
+                    <option key={m.memberId} value={m.memberId}>{m.firstName} {m.lastName}</option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="flex flex-wrap gap-3 pt-2">
+                <button type="button" onClick={handleRemoveFromExec} className="text-sm text-red-600 border border-red-200 px-3 py-2 rounded-lg">
+                  Remove from executive list
+                </button>
+                <button type="submit" className="bg-navy text-white px-4 py-2 rounded-lg text-sm">
+                  Save changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       ) : null}
     </div>
   );

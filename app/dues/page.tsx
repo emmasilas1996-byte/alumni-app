@@ -68,6 +68,22 @@ function DuesPageContent() {
     load();
   }, [year, month]);
 
+  async function ensureAuthenticated(next: () => void) {
+    try {
+      const res = await fetch("/api/auth/session");
+      if (res.ok) {
+        const body = await res.json();
+        if (body.authenticated) {
+          next();
+          return;
+        }
+      }
+    } catch {
+      // fall through to login redirect
+    }
+    window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+  }
+
   useEffect(() => {
     const reference = searchParams.get("reference");
     const paystackStatus = searchParams.get("paystack");
@@ -98,6 +114,18 @@ function DuesPageContent() {
   async function handleAdd(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
+
+    const authRes = await fetch("/api/auth/session");
+    if (!authRes.ok) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    const authBody = await authRes.json().catch(() => ({}));
+    if (!authBody.authenticated) {
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+
     const formData = new FormData(e.currentTarget);
     formData.set("dueYear", String(year));
     formData.set("dueMonth", String(month));
@@ -147,6 +175,20 @@ function DuesPageContent() {
     setBulkError("");
     setBulkResult(null);
     setBulkImporting(true);
+
+    const authRes = await fetch("/api/auth/session");
+    if (!authRes.ok) {
+      setBulkImporting(false);
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    const authBody = await authRes.json().catch(() => ({}));
+    if (!authBody.authenticated) {
+      setBulkImporting(false);
+      window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+
     const formData = new FormData(e.currentTarget);
     const res = await fetch("/api/dues/bulk-import", { method: "POST", body: formData });
     setBulkImporting(false);
@@ -191,12 +233,10 @@ function DuesPageContent() {
         </button>
         <button
           onClick={() => {
-            if (!authenticated) {
-              router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
-              return;
-            }
-            setShowForm((s) => !s);
-            setShowPaystackForm(false);
+            void ensureAuthenticated(() => {
+              setShowForm((s) => !s);
+              setShowPaystackForm(false);
+            });
           }}
           className="bg-navy text-white px-4 py-2 rounded text-sm"
         >
@@ -204,13 +244,11 @@ function DuesPageContent() {
         </button>
         <button
           onClick={() => {
-            if (!authenticated) {
-              router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
-              return;
-            }
-            setShowBulkImport((s) => !s);
-            setShowForm(false);
-            setShowPaystackForm(false);
+            void ensureAuthenticated(() => {
+              setShowBulkImport((s) => !s);
+              setShowForm(false);
+              setShowPaystackForm(false);
+            });
           }}
           className="border border-navy text-navy px-4 py-2 rounded text-sm"
         >
