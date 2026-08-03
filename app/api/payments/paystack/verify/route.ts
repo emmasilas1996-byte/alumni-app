@@ -35,7 +35,20 @@ export async function POST(req: NextRequest) {
     }
 
     const metadata = transaction.metadata ?? {};
-    const amountNaira = Number(transaction.amount) / 100;
+    // Prefer the settled or charged amount if Paystack provides it (this
+    // reflects the actual amount received after any adjustments). Fall
+    // back to `amount` if none of the others are present.
+    let amountKoboNum: number;
+    if (transaction.settlement_amount != null) {
+      amountKoboNum = Number(transaction.settlement_amount);
+    } else if (transaction.charged_amount != null) {
+      amountKoboNum = Number(transaction.charged_amount);
+    } else if (transaction.fees != null) {
+      amountKoboNum = Number(transaction.amount) - Number(transaction.fees);
+    } else {
+      amountKoboNum = Number(transaction.amount);
+    }
+    const amountNaira = amountKoboNum / 100;
     const memberIdFromMetadata = Number(metadata?.memberId ?? metadata?.member_id ?? 0);
 
     const payerUser = memberIdFromMetadata

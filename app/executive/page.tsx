@@ -52,10 +52,10 @@ export default function ExecutivePage() {
   }
 
   useEffect(() => {
-    void ensureAuthenticated(() => {
+    (async () => {
+      await load();
       setAuthorized(true);
-      void load();
-    });
+    })();
   }, []);
 
   const nonExecMembers = allMembers.filter((m) => !m.isExecutive);

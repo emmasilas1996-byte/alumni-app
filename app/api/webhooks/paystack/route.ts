@@ -37,7 +37,19 @@ export async function POST(req: NextRequest) {
   }
 
   const { reference, amount, metadata } = event.data;
-  const amountNaira = amount / 100;
+  // Prefer Paystack's settled/charged amount when available so we record
+  // the actual value received rather than the original charge amount.
+  let amountKoboNum: number;
+  if (event.data?.settlement_amount != null) {
+    amountKoboNum = Number(event.data.settlement_amount);
+  } else if (event.data?.charged_amount != null) {
+    amountKoboNum = Number(event.data.charged_amount);
+  } else if (event.data?.fees != null) {
+    amountKoboNum = Number(amount) - Number(event.data.fees);
+  } else {
+    amountKoboNum = Number(amount);
+  }
+  const amountNaira = amountKoboNum / 100;
   const memberIdFromMetadata = Number(metadata?.memberId ?? metadata?.member_id ?? 0);
 
   const payerUser = memberIdFromMetadata
