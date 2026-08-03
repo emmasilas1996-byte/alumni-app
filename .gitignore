@@ -8,7 +8,7 @@ yarn-error.log*
 pnpm-debug.log*
 coverage/
 .env
-.env.*
+#.env.*
 *.log
 /.vscode/
 /.idea/

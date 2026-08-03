@@ -46,7 +46,23 @@ Copy the env template:
 cp .env.example .env
 ```
 
-Fill in `DATABASE_URL` with your SQL Server connection details.
+Open `.env` and replace the placeholder values with your own account details.
+If you're on Windows PowerShell, use:
+
+```powershell
+copy .env.example .env
+```
+
+Then update:
+
+- `DATABASE_URL`
+- `ENCRYPTION_KEY`
+- `JWT_SECRET`
+- `GMAIL_USER`
+- `GMAIL_APP_PASSWORD`
+- `CRON_SECRET`
+- `PAYSTACK_SECRET_KEY`
+- `PAYSTACK_PUBLIC_KEY`
 
 ## 3. Generate your encryption key and JWT secret
 
