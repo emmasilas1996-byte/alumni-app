@@ -82,36 +82,44 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ error: "No update data provided." }, { status: 400 });
     }
 
-    const updated = await prisma.member.update({
-      where: { memberId },
-      data: updateData,
-      select: {
-        memberId: true,
-        firstName: true,
-        lastName: true,
-        dateOfBirth: true,
-        occupation: true,
-        location: true,
-        isExecutive: true,
-        executiveTitle: true,
-        dateJoined: true,
-        thoughts: true,
-      },
-    });
-    const response = NextResponse.json(updated);
-    clearSessionCookie();
-    return response;
+    try {
+      const updated = await prisma.member.update({
+        where: { memberId },
+        data: updateData,
+        select: {
+          memberId: true,
+          firstName: true,
+          lastName: true,
+          dateOfBirth: true,
+          occupation: true,
+          location: true,
+          isExecutive: true,
+          executiveTitle: true,
+          dateJoined: true,
+          thoughts: true,
+        },
+      });
+      return NextResponse.json(updated);
+    } catch (err: any) {
+      console.error("Failed to update member:", err);
+      return NextResponse.json({ error: err.message || "Failed to update member." }, { status: 500 });
+    }
   }
 
   const body = await req.json();
-  const updated = await prisma.member.update({
-    where: { memberId },
-    data: {
-      isExecutive: body.isExecutive ?? undefined,
-      executiveTitle: body.executiveTitle ?? undefined,
-    },
-    select: { memberId: true, isExecutive: true, executiveTitle: true },
-  });
+  try {
+    const updated = await prisma.member.update({
+      where: { memberId },
+      data: {
+        isExecutive: body.isExecutive ?? undefined,
+        executiveTitle: body.executiveTitle ?? undefined,
+      },
+      select: { memberId: true, isExecutive: true, executiveTitle: true },
+    });
 
-  return NextResponse.json(updated);
+    return NextResponse.json(updated);
+  } catch (err: any) {
+    console.error("Failed to update executive member details:", err);
+    return NextResponse.json({ error: err.message || "Failed to update executive member." }, { status: 500 });
+  }
 }

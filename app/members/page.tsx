@@ -59,13 +59,26 @@ export default function MembersPage() {
     return false;
   }
 
-  async function handleAdd(e: React.FormEvent<HTMLFormElement>) {
+  function findForm(e: React.FormEvent) {
+    if (e.currentTarget instanceof HTMLFormElement) {
+      return e.currentTarget;
+    }
+    return e.target instanceof Element ? e.target.closest("form") : null;
+  }
+
+  async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     const authenticated = await ensureAuthenticated(() => undefined);
     if (!authenticated) return;
 
+    const form = findForm(e);
+    if (!form) {
+      alert("Could not find the member form. Please try again.");
+      return;
+    }
+
     setSubmitting(true);
-    const formData = new FormData(e.currentTarget);
+    const formData = new FormData(form);
     const res = await fetch("/api/members", { method: "POST", body: formData });
     setSubmitting(false);
     if (res.ok) {
@@ -92,15 +105,21 @@ export default function MembersPage() {
     });
   }
 
-  async function handleSaveEdit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSaveEdit(e: React.FormEvent) {
     e.preventDefault();
     if (!editingMember) return;
     const authenticated = await ensureAuthenticated(() => undefined);
     if (!authenticated) return;
 
+    const form = findForm(e);
+    if (!form) {
+      setEditError("Could not find the edit form. Please try again.");
+      return;
+    }
+
     setSavingEdit(true);
     setEditError("");
-    const formData = new FormData(e.currentTarget);
+    const formData = new FormData(form);
     const res = await fetch(`/api/members/${editingMember.memberId}`, {
       method: "PATCH",
       body: formData,
