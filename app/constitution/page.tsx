@@ -317,7 +317,7 @@ export default function ConstitutionPage() {
     );
   }
 
-  // ---------- VIEW MODE: full constitution list, click a section to read it in full ----------
+  // ---------- VIEW MODE: full constitution list with all section text ----------
   return (
     <div>
       <div className="flex justify-between items-center mb-1 flex-wrap gap-3">
@@ -329,7 +329,9 @@ export default function ConstitutionPage() {
           Amend
         </button>
       </div>
-      <p className="text-[13.5px] text-gray-500 mb-6">Click any section below to read it in full.</p>
+      <p className="text-[13.5px] text-gray-500 mb-6">
+        Browse the full constitution below. Click any section title in the left menu to highlight it.
+      </p>
 
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         <div className="bg-white border border-line rounded-2xl divide-y divide-line">
@@ -359,17 +361,28 @@ export default function ConstitutionPage() {
           {sections.length === 0 && <div className="p-4 text-sm text-gray-500">No constitution content yet.</div>}
         </div>
 
-        <div className="bg-white border border-line rounded-2xl p-6 min-h-[280px]">
-          {viewing ? (
-            <div>
-              <div className="font-display text-xl font-semibold mb-4">{viewing.title}</div>
-              <div className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{viewing.content}</div>
-            </div>
-          ) : (
-            <div className="text-sm text-gray-500">
-              Select a section from the list on the left to view its full text.
-            </div>
-          )}
+        <div className="space-y-8">
+          {sections.map((s) => (
+            <section
+              key={s.sectionId}
+              className={`bg-white border border-line rounded-2xl p-6 shadow-sm transition ${
+                viewing?.sectionId === s.sectionId ? "ring-2 ring-gold" : ""
+              }`}
+            >
+              <h2 className="font-display text-xl font-semibold mb-3">{s.title}</h2>
+              <div className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{s.content}</div>
+              {s.children?.length ? (
+                <div className="mt-6 space-y-4">
+                  {s.children.map((c) => (
+                    <div key={c.sectionId} className={`rounded-2xl p-4 ${viewing?.sectionId === c.sectionId ? "bg-ivory" : "bg-slate-50"}`}>
+                      <h3 className="text-base font-semibold mb-2">{c.title}</h3>
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{c.content}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ))}
         </div>
       </div>
     </div>
