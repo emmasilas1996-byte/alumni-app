@@ -11,9 +11,22 @@ interface GalleryMember {
 
 export default function GalleryPage() {
   const [members, setMembers] = useState<GalleryMember[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [photoVersion] = useState(() => Date.now());
 
   useEffect(() => {
-    fetch("/api/gallery").then((r) => r.json()).then(setMembers);
+    fetch("/api/gallery")
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`Gallery fetch failed: ${res.status}`);
+        }
+        return res.json();
+      })
+      .then(setMembers)
+      .catch((err) => {
+        console.error(err);
+        setError("Unable to load the gallery. Please try again later.");
+      });
   }, []);
 
   return (
@@ -24,9 +37,13 @@ export default function GalleryPage() {
           <div key={m.memberId} className="bg-white border border-line rounded-2xl overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={`/api/members/${m.memberId}/photo`}
+              src={`/api/members/${m.memberId}/photo?v=${photoVersion}`}
               alt={m.firstName}
               className="w-full h-40 object-cover"
+              onError={(e) => {
+                const img = e.target as HTMLImageElement;
+                img.style.visibility = "hidden";
+              }}
             />
             <div className="p-3">
               <div className="font-medium text-sm">{m.firstName} {m.lastName}</div>
@@ -34,7 +51,7 @@ export default function GalleryPage() {
             </div>
           </div>
         ))}
-        {members.length === 0 && <div className="text-sm text-gray-500">No photos uploaded yet.</div>}
+        {members.length === 0 && !error && <div className="text-sm text-gray-500">No photos uploaded yet.</div>}
       </div>
     </div>
   );

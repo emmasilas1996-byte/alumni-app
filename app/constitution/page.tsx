@@ -317,7 +317,7 @@ export default function ConstitutionPage() {
     );
   }
 
-  // ---------- VIEW MODE: full constitution list, click a section to pop it open ----------
+  // ---------- VIEW MODE: full constitution list, click a section to read it in full ----------
   return (
     <div>
       <div className="flex justify-between items-center mb-1 flex-wrap gap-3">
@@ -331,46 +331,47 @@ export default function ConstitutionPage() {
       </div>
       <p className="text-[13.5px] text-gray-500 mb-6">Click any section below to read it in full.</p>
 
-      <div className="bg-white border border-line rounded-2xl divide-y divide-line">
-        {sections.map((s) => (
-          <div key={s.sectionId}>
-            <button onClick={() => setViewing(s)} className="w-full text-left p-3 hover:bg-ivory font-medium transition-colors">
-              {s.title}
-            </button>
-            {s.children?.map((c) => (
+      <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+        <div className="bg-white border border-line rounded-2xl divide-y divide-line">
+          {sections.map((s) => (
+            <div key={s.sectionId}>
               <button
-                key={c.sectionId}
-                onClick={() => setViewing(c)}
-                className="w-full text-left pl-8 pr-3 py-2 hover:bg-ivory text-sm text-gray-600 border-t border-line transition-colors"
+                onClick={() => setViewing(s)}
+                className={`w-full text-left p-3 transition-colors ${
+                  viewing?.sectionId === s.sectionId ? "bg-ivory" : "hover:bg-ivory"
+                } font-medium`}
               >
-                {c.title}
+                {s.title}
               </button>
-            ))}
-          </div>
-        ))}
-        {sections.length === 0 && <div className="p-4 text-sm text-gray-500">No constitution content yet.</div>}
-      </div>
-
-      {/* SECTION POPUP — closing returns to this list to pick another */}
-      {viewing && (
-        <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setViewing(null)}
-        >
-          <div
-            className="bg-white rounded-3xl max-w-2xl w-full max-h-[85vh] overflow-y-auto shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-center p-4 border-b border-line sticky top-0 bg-white">
-              <div className="font-display text-lg font-semibold">{viewing.title}</div>
-              <button onClick={() => setViewing(null)} className="text-sm text-gray-600 hover:text-black">
-                Close
-              </button>
+              {s.children?.map((c) => (
+                <button
+                  key={c.sectionId}
+                  onClick={() => setViewing(c)}
+                  className={`w-full text-left pl-8 pr-3 py-2 text-sm transition-colors ${
+                    viewing?.sectionId === c.sectionId ? "bg-ivory" : "hover:bg-ivory"
+                  } text-gray-600 border-t border-line`}
+                >
+                  {c.title}
+                </button>
+              ))}
             </div>
-            <div className="p-6 whitespace-pre-wrap text-sm leading-relaxed">{viewing.content}</div>
-          </div>
+          ))}
+          {sections.length === 0 && <div className="p-4 text-sm text-gray-500">No constitution content yet.</div>}
         </div>
-      )}
+
+        <div className="bg-white border border-line rounded-2xl p-6 min-h-[280px]">
+          {viewing ? (
+            <div>
+              <div className="font-display text-xl font-semibold mb-4">{viewing.title}</div>
+              <div className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{viewing.content}</div>
+            </div>
+          ) : (
+            <div className="text-sm text-gray-500">
+              Select a section from the list on the left to view its full text.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
