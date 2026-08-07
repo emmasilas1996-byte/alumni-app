@@ -31,6 +31,7 @@ function DuesPageContent() {
   const [showForm, setShowForm] = useState(false);
   const [showPaystackForm, setShowPaystackForm] = useState(false);
   const [error, setError] = useState("");
+  const [savingDue, setSavingDue] = useState(false);
   const [paystackError, setPaystackError] = useState("");
   const [paystackLoading, setPaystackLoading] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
@@ -114,6 +115,7 @@ function DuesPageContent() {
   async function handleAdd(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
+    setSavingDue(true);
 
     const authRes = await fetch("/api/auth/session");
     if (!authRes.ok) {
@@ -130,6 +132,7 @@ function DuesPageContent() {
     formData.set("dueYear", String(year));
     formData.set("dueMonth", String(month));
     const res = await fetch("/api/dues", { method: "POST", body: formData });
+    setSavingDue(false);
     if (res.status === 401) {
       router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
       return;
@@ -334,7 +337,9 @@ function DuesPageContent() {
             Receipt (encrypted on upload)
             <input name="receipt" type="file" accept="image/*,.pdf" className="block mt-1" />
           </label>
-          <button type="submit" className="bg-navy text-white px-4 py-2 rounded text-sm">Save Payment</button>
+          <button type="submit" disabled={savingDue} className="bg-navy text-white px-4 py-2 rounded text-sm disabled:opacity-50">
+            {savingDue ? "Saving..." : "Save Payment"}
+          </button>
         </form>
       )}
 

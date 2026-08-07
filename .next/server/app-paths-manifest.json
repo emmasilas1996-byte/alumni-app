@@ -1,6 +1,13 @@
 {
+  "/members/page": "app/members/page.js",
+  "/api/members/route": "app/api/members/route.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/api/members/[id]/photo/route": "app/api/members/[id]/photo/route.js",
   "/api/dashboard/route": "app/api/dashboard/route.js",
-  "/constitution/page": "app/constitution/page.js",
-  "/api/constitution/route": "app/api/constitution/route.js",
-  "/api/auth/session/route": "app/api/auth/session/route.js"
+  "/dues/page": "app/dues/page.js",
+  "/api/auth/session/route": "app/api/auth/session/route.js",
+  "/gallery/page": "app/gallery/page.js",
+  "/api/dues/route": "app/api/dues/route.js",
+  "/api/gallery/route": "app/api/gallery/route.js",
+  "/api/settings/logo/route": "app/api/settings/logo/route.js"
 }

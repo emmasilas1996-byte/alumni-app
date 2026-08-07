@@ -3,6 +3,13 @@ import { prisma } from "@/lib/db";
 import { encryptBuffer } from "@/lib/crypto";
 import { verifyPaystackWebhookSignature } from "@/lib/paystack";
 
+// Never statically cache this route — it reads/writes live data via
+// Prisma on every request. Without this, Next.js can silently
+// pre-render a GET handler with no request-derived params ONCE at
+// build time and serve that frozen snapshot forever after (this is
+// exactly what broke newly-assigned executives from ever showing up).
+export const dynamic = "force-dynamic";
+
 // POST /api/webhooks/paystack
 // Configure this URL in your Paystack dashboard under Settings > API Keys
 // & Webhooks once the app is deployed: https://yourapp.com/api/webhooks/paystack

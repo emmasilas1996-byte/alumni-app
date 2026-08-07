@@ -1,9 +1,24 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
+import { NextRequest } from "next/server";
 
 const COOKIE_NAME = "alumni_session";
 const SESSION_HOURS = 8;
+
+/**
+ * Detects whether the ORIGINAL request from the browser was HTTPS.
+ * Checks X-Forwarded-Proto first, since Nginx sits in front of Node —
+ * once HTTPS is set up, Nginx terminates SSL and forwards plain HTTP
+ * to Node internally, so req.url alone would always say "http" even
+ * on a fully HTTPS site. Falls back to the request's own protocol for
+ * local dev (no proxy in front).
+ */
+export function isHttpsRequest(req: NextRequest): boolean {
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  if (forwardedProto) return forwardedProto.split(",")[0].trim() === "https";
+  return req.nextUrl.protocol === "https:";
+}
 
 function getSecret(): string {
   const secret = process.env.JWT_SECRET;
@@ -25,12 +40,23 @@ export function createSessionToken(userId: number, username: string): string {
   });
 }
 
-export function setSessionCookie(token: string) {
+export function setSessionCookie(token: string, isHttps: boolean) {
   cookies().set(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    // Reflects whether THIS request actually arrived over HTTPS, not
+    // NODE_ENV. A cookie marked Secure is silently dropped by the
+    // browser on a plain HTTP connection — using NODE_ENV="production"
+    // as the signal broke login entirely on a production site still
+    // served over HTTP (no SSL certificate set up yet). Once HTTPS is
+    // added, requests will naturally come in as isHttps=true and the
+    // cookie becomes Secure automatically — no code change needed then.
+    secure: isHttps,
     sameSite: "lax",
-    maxAge: SESSION_HOURS * 60 * 60,
+    // No maxAge/expires on purpose: this makes it a true browser-session
+    // cookie, cleared automatically when the browser is fully closed —
+    // so leaving and coming back later requires signing in again. The
+    // JWT itself still expires server-side after SESSION_HOURS as a
+    // backstop for tabs left open longer than that.
     path: "/",
   });
 }

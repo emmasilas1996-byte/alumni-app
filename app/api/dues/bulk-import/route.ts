@@ -1,18 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { clearSessionCookie, requireSession } from "@/lib/auth";
+import { requireSession } from "@/lib/auth";
+import { parseUploadedFile, parseMonth, parseAmount } from "@/lib/bulk-import";
+
+// Never statically cache this route — it reads/writes live data via
+// Prisma on every request. Without this, Next.js can silently
+// pre-render a GET handler with no request-derived params ONCE at
+// build time and serve that frozen snapshot forever after (this is
+// exactly what broke newly-assigned executives from ever showing up).
+export const dynamic = "force-dynamic";
 
 // POST /api/dues/bulk-import
 // Login required — same gate as the regular "Add Payment" flow.
 //
-// Expects a CSV file (multipart/form-data, field name "file") with
-// these columns, header row required:
-//   FirstName,LastName,Year,Month,Amount,PaymentDate
-// PaymentDate is optional (YYYY-MM-DD) — defaults to today if omitted.
-// Month is 1-12.
+// Accepts EITHER a CSV or an Excel (.xlsx/.xls) file, field name "file".
+// Required columns (header row, case-insensitive): FirstName, LastName,
+// Year, Month, Amount. Optional: PaymentDate.
 //
-// This exists specifically for backlog data entry: dues that were
-// collected in past years before this app existed, being recorded now.
+// Month accepts either a number (1-12) or a name — full ("July") or
+// abbreviated ("Jul", "AUG"). Amount accepts plain numbers OR
+// currency-formatted strings like "₦500.00" or "500,000".
+//
+// This exists specifically for backlog data entry: dues collected in
+// past years before this app existed, being recorded now.
 export async function POST(req: NextRequest) {
   let session;
   try {
@@ -24,28 +34,33 @@ export async function POST(req: NextRequest) {
   const form = await req.formData();
   const file = form.get("file") as File | null;
   if (!file || file.size === 0) {
-    return NextResponse.json({ error: "No CSV file provided." }, { status: 400 });
+    return NextResponse.json({ error: "No file provided." }, { status: 400 });
   }
 
-  const text = await file.text();
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length < 2) {
-    return NextResponse.json({ error: "CSV file has no data rows." }, { status: 400 });
-  }
-
-  const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
-  const requiredCols = ["firstname", "lastname", "year", "month", "amount"];
-  const missing = requiredCols.filter((c) => !header.includes(c));
-  if (missing.length > 0) {
+  let rows: Record<string, unknown>[];
+  try {
+    rows = await parseUploadedFile(file);
+  } catch (e: any) {
     return NextResponse.json(
-      { error: `CSV is missing required column(s): ${missing.join(", ")}` },
+      { error: `Could not read the file — ${e.message || "unknown parsing error"}.` },
       { status: 400 }
     );
   }
 
-  const colIndex = (name: string) => header.indexOf(name);
+  if (rows.length === 0) {
+    return NextResponse.json({ error: "File has no data rows." }, { status: 400 });
+  }
 
-  // Cache all members once instead of querying per row.
+  const requiredCols = ["firstname", "lastname", "year", "month", "amount"];
+  const foundCols = Object.keys(rows[0]);
+  const missing = requiredCols.filter((c) => !foundCols.includes(c));
+  if (missing.length > 0) {
+    return NextResponse.json(
+      { error: `File is missing required column(s): ${missing.join(", ")}. Found columns: ${foundCols.join(", ")}` },
+      { status: 400 }
+    );
+  }
+
   const members = await prisma.member.findMany({
     select: { memberId: true, firstName: true, lastName: true },
   });
@@ -54,25 +69,21 @@ export async function POST(req: NextRequest) {
 
   const results = { imported: 0, skipped: 0, errors: [] as string[] };
 
-  for (let i = 1; i < lines.length; i++) {
-    const row = lines[i].split(",").map((c) => c.trim());
-    const rowNum = i + 1; // 1-indexed + header row
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNum = i + 2;
 
-    const firstName = row[colIndex("firstname")];
-    const lastName = row[colIndex("lastname")];
-    const year = Number(row[colIndex("year")]);
-    const month = Number(row[colIndex("month")]);
-    const amount = Number(row[colIndex("amount")]);
-    const dateColIdx = colIndex("paymentdate");
-    const paymentDateStr = dateColIdx >= 0 ? row[dateColIdx] : null;
+    const firstName = String(row.firstname ?? "").trim();
+    const lastName = String(row.lastname ?? "").trim();
+    const year = Number(row.year);
+    const month = parseMonth(row.month);
+    const amount = parseAmount(row.amount);
+    const paymentDateRaw = row.paymentdate;
 
     if (!firstName || !lastName || !year || !month || !amount) {
-      results.errors.push(`Row ${rowNum}: missing or invalid required field(s).`);
-      results.skipped++;
-      continue;
-    }
-    if (month < 1 || month > 12) {
-      results.errors.push(`Row ${rowNum}: month must be 1-12, got ${month}.`);
+      results.errors.push(
+        `Row ${rowNum}: missing or invalid field(s) — check FirstName, LastName, Year, Month ("${row.month}"), Amount ("${row.amount}").`
+      );
       results.skipped++;
       continue;
     }
@@ -84,6 +95,14 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
+    let paymentDate: Date;
+    if (paymentDateRaw) {
+      const parsed = new Date(String(paymentDateRaw));
+      paymentDate = isNaN(parsed.getTime()) ? new Date() : parsed;
+    } else {
+      paymentDate = new Date();
+    }
+
     try {
       await prisma.monthlyDue.create({
         data: {
@@ -92,7 +111,7 @@ export async function POST(req: NextRequest) {
           dueMonth: month,
           amount,
           paymentMethod: "Manual",
-          paymentDate: paymentDateStr ? new Date(paymentDateStr) : new Date(),
+          paymentDate,
           createdByUserId: session.userId,
         },
       });
@@ -107,7 +126,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const response = NextResponse.json(results);
-  clearSessionCookie();
-  return response;
+  return NextResponse.json(results);
 }

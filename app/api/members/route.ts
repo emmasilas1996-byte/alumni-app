@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { decryptText, encryptBuffer, encryptText } from "@/lib/crypto";
 
+// Never statically cache this route — it reads/writes live data via
+// Prisma on every request. Without this, Next.js can silently
+// pre-render a GET handler with no request-derived params ONCE at
+// build time and serve that frozen snapshot forever after (this is
+// exactly what broke newly-assigned executives from ever showing up).
+export const dynamic = "force-dynamic";
+
 // GET /api/members — list every member (execs + regular). No photo bytes
 // in the list response — those are fetched separately via /api/members/[id]/photo
 // so the list stays light.

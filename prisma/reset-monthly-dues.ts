@@ -78,7 +78,24 @@ function parseAmount(value: string): number | null {
 }
 
 async function main() {
-  const csvPath = process.argv[2] ? path.resolve(process.cwd(), process.argv[2]) : null;
+  // Safety guard: this script deletes EVERY MonthlyDue record before
+  // optionally reimporting from a CSV. Require an explicit --confirm
+  // flag so it can never run by accident (e.g. wrong CSV path, or run
+  // with no path at all leaves the table permanently empty).
+  const args = process.argv.slice(2);
+  if (!args.includes("--confirm")) {
+    console.log(
+      "This script deletes ALL MonthlyDues records before reimporting.\n" +
+      "Re-run with --confirm to proceed, e.g.:\n" +
+      "  npx tsx prisma/reset-monthly-dues.ts path/to/file.csv --confirm\n" +
+      "Nothing was deleted."
+    );
+    return;
+  }
+
+  const csvPath = args.find((a) => !a.startsWith("--"))
+    ? path.resolve(process.cwd(), args.find((a) => !a.startsWith("--"))!)
+    : null;
   console.log("Cleaning MonthlyDues table...");
   await prisma.monthlyDue.deleteMany({});
   console.log("Deleted all MonthlyDues records.");

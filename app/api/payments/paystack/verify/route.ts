@@ -4,6 +4,13 @@ import { prisma } from "@/lib/db";
 import { encryptBuffer } from "@/lib/crypto";
 import { verifyPaystackTransaction } from "@/lib/paystack";
 
+// Never statically cache this route — it reads/writes live data via
+// Prisma on every request. Without this, Next.js can silently
+// pre-render a GET handler with no request-derived params ONCE at
+// build time and serve that frozen snapshot forever after (this is
+// exactly what broke newly-assigned executives from ever showing up).
+export const dynamic = "force-dynamic";
+
 const schema = z.object({
   reference: z.string().min(1),
 });

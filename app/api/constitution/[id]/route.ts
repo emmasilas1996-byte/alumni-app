@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { clearSessionCookie, requireSession } from "@/lib/auth";
+import { requireSession } from "@/lib/auth";
+
+// Never statically cache this route — it reads/writes live data via
+// Prisma on every request. Without this, Next.js can silently
+// pre-render a GET handler with no request-derived params ONCE at
+// build time and serve that frozen snapshot forever after (this is
+// exactly what broke newly-assigned executives from ever showing up).
+export const dynamic = "force-dynamic";
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -35,7 +42,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   });
 
   const response = NextResponse.json(updated);
-  clearSessionCookie();
   return response;
 }
 
@@ -56,6 +62,5 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   });
 
   const response = NextResponse.json({ success: true });
-  clearSessionCookie();
   return response;
 }

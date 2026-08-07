@@ -39,7 +39,7 @@ export default function GalleryPage() {
             <img
               src={`/api/members/${m.memberId}/photo?v=${photoVersion}`}
               alt={m.firstName}
-              className="w-full h-40 object-cover"
+              className="w-full aspect-[3/4] object-cover object-top"
               onError={(e) => {
                 const img = e.target as HTMLImageElement;
                 img.style.visibility = "hidden";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import ConfirmModal from "@/components/ConfirmModal";
 
 interface Member {
   memberId: number;
@@ -19,28 +19,10 @@ export default function ExecutivePage() {
   const [editingExec, setEditingExec] = useState<Member | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [replacementMemberId, setReplacementMemberId] = useState("");
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [assignError, setAssignError] = useState("");
   const [editError, setEditError] = useState("");
-  const [authorized, setAuthorized] = useState(false);
-  const router = useRouter();
-  const pathname = usePathname();
-
-  async function ensureAuthenticated(next: () => void) {
-    try {
-      const res = await fetch("/api/auth/session");
-      if (!res.ok) {
-        router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
-        return;
-      }
-      const session = await res.json();
-      if (!session.authenticated) {
-        router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
-        return;
-      }
-      next();
-    } catch {
-      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
-    }
-  }
+  const [loaded, setLoaded] = useState(false);
 
   async function load() {
     const [execRes, memberRes] = await Promise.all([
@@ -54,36 +36,51 @@ export default function ExecutivePage() {
   useEffect(() => {
     (async () => {
       await load();
-      setAuthorized(true);
+      setLoaded(true);
     })();
   }, []);
 
   const nonExecMembers = allMembers.filter((m) => !m.isExecutive);
   const replacementCandidates = allMembers.filter((m) => m.memberId !== editingExec?.memberId && !m.isExecutive);
 
+  // Executive assign/remove is intentionally NOT login-gated — matches
+  // the app's original design (only financial actions like Add
+  // Contribution / Add Dues, plus Member Edit and Constitution Amend,
+  // require sign-in). Every request below still checks the response
+  // and surfaces a real error instead of silently doing nothing if it
+  // fails, which is what masked the underlying bug here before.
+
   async function handleAssign(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedMemberId) return;
-    await ensureAuthenticated(() => undefined);
+    setAssignError("");
 
-    await fetch(`/api/members/${selectedMemberId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isExecutive: true, executiveTitle: title || "Executive" }),
-    });
+    try {
+      const res = await fetch(`/api/members/${selectedMemberId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isExecutive: true, executiveTitle: title || "Executive" }),
+      });
 
-    setSelectedMemberId("");
-    setTitle("");
-    load();
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setAssignError(body.error || `Could not add executive (status ${res.status}).`);
+        return;
+      }
+
+      setSelectedMemberId("");
+      setTitle("");
+      await load();
+    } catch {
+      setAssignError("Network error — could not reach the server.");
+    }
   }
 
   function openEditExec(member: Member) {
-    void ensureAuthenticated(() => {
-      setEditingExec(member);
-      setEditTitle(member.executiveTitle || "");
-      setReplacementMemberId("");
-      setEditError("");
-    });
+    setEditingExec(member);
+    setEditTitle(member.executiveTitle || "");
+    setReplacementMemberId("");
+    setEditError("");
   }
 
   async function handleSaveEdit(e: React.FormEvent) {
@@ -91,60 +88,78 @@ export default function ExecutivePage() {
     if (!editingExec) return;
     setEditError("");
 
-    await ensureAuthenticated(async () => {
-      try {
-        if (replacementMemberId) {
-          await fetch(`/api/members/${editingExec.memberId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ isExecutive: false, executiveTitle: null }),
-          });
-
-          await fetch(`/api/members/${replacementMemberId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ isExecutive: true, executiveTitle: editTitle || "Executive" }),
-          });
-        } else {
-          await fetch(`/api/members/${editingExec.memberId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ isExecutive: true, executiveTitle: editTitle || "Executive" }),
-          });
+    try {
+      if (replacementMemberId) {
+        const removeRes = await fetch(`/api/members/${editingExec.memberId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isExecutive: false, executiveTitle: null }),
+        });
+        if (!removeRes.ok) {
+          const body = await removeRes.json().catch(() => ({}));
+          setEditError(body.error || "Could not remove the current executive.");
+          return;
         }
 
-        setEditingExec(null);
-        setReplacementMemberId("");
-        setEditTitle("");
-        await load();
-      } catch {
-        setEditError("Could not update executive details.");
+        const assignRes = await fetch(`/api/members/${replacementMemberId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isExecutive: true, executiveTitle: editTitle || "Executive" }),
+        });
+        if (!assignRes.ok) {
+          const body = await assignRes.json().catch(() => ({}));
+          setEditError(body.error || "Could not assign the replacement executive.");
+          return;
+        }
+      } else {
+        const res = await fetch(`/api/members/${editingExec.memberId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isExecutive: true, executiveTitle: editTitle || "Executive" }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setEditError(body.error || "Could not update executive details.");
+          return;
+        }
       }
-    });
+
+      setEditingExec(null);
+      setReplacementMemberId("");
+      setEditTitle("");
+      await load();
+    } catch {
+      setEditError("Network error — could not reach the server.");
+    }
   }
 
   async function handleRemoveFromExec() {
     if (!editingExec) return;
-    await ensureAuthenticated(() => undefined);
+    setEditError("");
 
     try {
-      await fetch(`/api/members/${editingExec.memberId}`, {
+      const res = await fetch(`/api/members/${editingExec.memberId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isExecutive: false, executiveTitle: null }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setEditError(body.error || "Could not remove executive role.");
+        return;
+      }
 
       setEditingExec(null);
       setEditTitle("");
       setReplacementMemberId("");
       await load();
     } catch {
-      setEditError("Could not remove executive role.");
+      setEditError("Network error — could not reach the server.");
     }
   }
 
-  if (!authorized) {
-    return <div className="p-4 text-sm text-gray-500">Checking access...</div>;
+  if (!loaded) {
+    return <div className="p-4 text-sm text-gray-500">Loading...</div>;
   }
 
   return (
@@ -153,6 +168,7 @@ export default function ExecutivePage() {
       <p className="text-sm text-gray-500 mb-4">Filtered from Members — only executives shown here.</p>
 
       <form onSubmit={handleAssign} className="bg-white border border-line rounded-2xl p-4 mb-6 flex gap-3 items-end flex-wrap">
+        {assignError && <div className="text-sm text-red-600 w-full">{assignError}</div>}
         <label className="text-sm text-gray-600">
           Member
           <select
@@ -240,7 +256,7 @@ export default function ExecutivePage() {
               </label>
 
               <div className="flex flex-wrap gap-3 pt-2">
-                <button type="button" onClick={handleRemoveFromExec} className="text-sm text-red-600 border border-red-200 px-3 py-2 rounded-lg">
+                <button type="button" onClick={() => setConfirmingRemove(true)} className="text-sm text-red-600 border border-red-200 px-3 py-2 rounded-lg">
                   Remove from executive list
                 </button>
                 <button type="submit" className="bg-navy text-white px-4 py-2 rounded-lg text-sm">
@@ -250,6 +266,20 @@ export default function ExecutivePage() {
             </form>
           </div>
         </div>
+      ) : null}
+
+      {confirmingRemove && editingExec ? (
+        <ConfirmModal
+          title="Remove from executive list"
+          description={`Remove ${editingExec.firstName} ${editingExec.lastName} from the executive list? They'll stay a regular member.`}
+          confirmLabel="Remove"
+          cancelLabel="Cancel"
+          onConfirm={() => {
+            setConfirmingRemove(false);
+            handleRemoveFromExec();
+          }}
+          onCancel={() => setConfirmingRemove(false)}
+        />
       ) : null}
     </div>
   );

@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import ConfirmModal from "@/components/ConfirmModal";
 
 interface Payment {
   paymentId: number;
@@ -56,12 +57,15 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
   const [showReleaseForm, setShowReleaseForm] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [error, setError] = useState("");
+  const [savingPayer, setSavingPayer] = useState(false);
   const [bulkError, setBulkError] = useState("");
   const [bulkImporting, setBulkImporting] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
   const [paystackError, setPaystackError] = useState("");
   const [paystackLoading, setPaystackLoading] = useState(false);
   const [releaseError, setReleaseError] = useState("");
+  const [savingRelease, setSavingRelease] = useState(false);
+  const [pendingRelease, setPendingRelease] = useState<{ amount: string; purpose: string; formData: FormData } | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
@@ -165,6 +169,7 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
   async function handleAddPayer(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
+    setSavingPayer(true);
 
     const authRes = await fetch("/api/auth/session");
     if (!authRes.ok) {
@@ -182,8 +187,14 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
       method: "POST",
       body: formData,
     });
+    setSavingPayer(false);
     if (res.status === 401) {
       window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setError(body.error || "Could not save payment.");
       return;
     }
     setShowForm(false);
@@ -208,10 +219,27 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
     }
 
     const formData = new FormData(e.currentTarget);
+    const amount = String(formData.get("amount") || "");
+    const purpose = String(formData.get("purpose") || "");
+    if (!amount || !purpose) {
+      setReleaseError("Amount and purpose are required.");
+      return;
+    }
+    // Money leaving a fund is significant and hard to undo — confirm the
+    // exact amount and purpose before it actually happens, rather than
+    // releasing the instant the form is submitted.
+    setPendingRelease({ amount, purpose, formData });
+  }
+
+  async function performRelease() {
+    if (!pendingRelease) return;
+    setSavingRelease(true);
     const res = await fetch(`/api/contributions/${params.id}/releases`, {
       method: "POST",
-      body: formData,
+      body: pendingRelease.formData,
     });
+    setSavingRelease(false);
+    setPendingRelease(null);
     if (res.status === 401) {
       window.location.assign(`/login?redirect=${encodeURIComponent(pathname)}`);
       return;
@@ -222,7 +250,6 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
       return;
     }
     setShowReleaseForm(false);
-    (e.target as HTMLFormElement).reset();
     setAuthenticated(false);
     load();
   }
@@ -348,7 +375,9 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
             Receipt (encrypted on upload)
             <input name="receipt" type="file" accept="image/*,.pdf" className="block mt-1" />
           </label>
-          <button type="submit" className="bg-navy text-white px-4 py-2 rounded-lg text-sm font-medium">Save Payment</button>
+          <button type="submit" disabled={savingPayer} className="bg-navy text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+            {savingPayer ? "Saving..." : "Save Payment"}
+          </button>
         </form>
       )}
 
@@ -425,8 +454,21 @@ function ContributionDetailPageContent({ params }: { params: { id: string } }) {
               Release receipt (encrypted on upload)
               <input name="receipt" type="file" accept="image/*,.pdf" className="block mt-1 text-white" />
             </label>
-            <button type="submit" className="bg-gold text-navy px-4 py-2 rounded-lg text-sm font-semibold">Confirm Release</button>
+            <button type="submit" disabled={savingRelease} className="bg-gold text-navy px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
+              {savingRelease ? "Releasing..." : "Release Funds"}
+            </button>
           </form>
+        )}
+
+        {pendingRelease && (
+          <ConfirmModal
+            title="Confirm fund release"
+            description={`Release NGN ${Number(pendingRelease.amount).toLocaleString()} for "${pendingRelease.purpose}"? This cannot be undone.`}
+            confirmLabel={savingRelease ? "Releasing..." : "Release Funds"}
+            cancelLabel="Cancel"
+            onConfirm={performRelease}
+            onCancel={() => setPendingRelease(null)}
+          />
         )}
 
         {releases && releases.releases.length > 0 && (

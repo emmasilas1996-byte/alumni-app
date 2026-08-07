@@ -4,6 +4,13 @@ import { decryptText } from "@/lib/crypto";
 import { initializePaystackTransaction } from "@/lib/paystack";
 import { z } from "zod";
 
+// Never statically cache this route — it reads/writes live data via
+// Prisma on every request. Without this, Next.js can silently
+// pre-render a GET handler with no request-derived params ONCE at
+// build time and serve that frozen snapshot forever after (this is
+// exactly what broke newly-assigned executives from ever showing up).
+export const dynamic = "force-dynamic";
+
 // POST /api/payments/paystack/initialize
 // No login required here — this is the self-serve "Pay via Paystack" path,
 // separate from the login-gated manual/cash entry path.
